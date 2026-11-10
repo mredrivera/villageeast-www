@@ -1,0 +1,13 @@
+# Supabase pauses free projects after about a week without activity. Loading the home page (which
+# reads events and announcements from the database) twice a week keeps the project awake.
+name: Keep alive
+on:
+  schedule:
+    - cron: '17 11 * * 1,4'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -o /dev/null -w "%{http_code}\n" https://villageeast.toston.io/meetings
