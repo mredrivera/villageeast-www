@@ -1,0 +1,105 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { isAdmin } from '~/lib/auth';
+import { fmtBytes, fmtDate, withFlash } from '~/lib/format';
+import { audit, createServiceClient } from '~/lib/supabase';
+
+const me = Astro.locals.profile!;
+if (!isAdmin(me)) return new Response('Not found', { status: 404 });
+const db = Astro.locals.supabase;
+const back = (kind: 'ok' | 'error', msg: string) => Astro.redirect(withFlash('/admin/documents', kind, msg), 303);
+const CATEGORIES: Record<string, string> = { governing: 'Governing documents', rules: 'Rules & policies', forms: 'Paper forms', financial: 'Financial reports', minutes: 'Minutes', agenda: 'Agendas', newsletter: 'Newsletters', board: 'Board & committees', realtor: 'Realtor documents', ballot: 'Ballots', notice: 'Notices' };
+const VIS: Record<string, string> = { public: 'Everyone', members: 'Owners only', staff: 'Board only' };
+const TYPES: Record<string, { ext: string; magic: number[] }> = {
+  'application/pdf': { ext: 'pdf', magic: [0x25, 0x50, 0x44, 0x46] },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { ext: 'docx', magic: [0x50, 0x4b, 0x03, 0x04] },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { ext: 'xlsx', magic: [0x50, 0x4b, 0x03, 0x04] },
+};
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const id = String(form.get('id') ?? '');
+  if (action === 'upload') {
+    const file = form.get('file');
+    const title = String(form.get('title') ?? '').trim();
+    const category = String(form.get('category') ?? '');
+    const visibility = String(form.get('visibility') ?? '');
+    const docDate = String(form.get('doc_date') ?? '');
+    if (!(file instanceof File) || file.size === 0) return back('error', 'Choose a file to upload.');
+    if (title.length < 2 || title.length > 200 || !(category in CATEGORIES) || !(visibility in VIS)) return back('error', 'Enter a title, category and visibility.');
+    if (docDate && !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) return back('error', 'Enter a valid date.');
+    const type = TYPES[file.type];
+    if (!type) return back('error', 'Only PDF, Word (.docx) and Excel (.xlsx) files can be uploaded.');
+    if (file.size > 50 * 1024 * 1024) return back('error', 'Files can be at most 50 MB.');
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    if (!type.magic.every((b, i) => head[i] === b)) return back('error', 'That file does not match its type.');
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'document';
+    const path = `${category}/${docDate ? docDate + '-' : ''}${slug}-${crypto.randomUUID().slice(0, 8)}.${type.ext}`;
+    const service = createServiceClient();
+    const up = await service.storage.from('documents').upload(path, await file.arrayBuffer(), { contentType: file.type });
+    if (up.error) { console.error('doc upload', up.error.message); return back('error', 'The upload failed. Please try again.'); }
+    const { error } = await db.from('documents').insert({ title, description: String(form.get('description') ?? '').trim().slice(0, 500) || null, category, visibility, doc_date: docDate || null, storage_path: path, file_name: `${slug}.${type.ext}`, mime_type: file.type, size_bytes: file.size });
+    if (error) { await service.storage.from('documents').remove([path]); return back('error', 'Could not save the document.'); }
+    await audit(me.id, 'document_uploaded', 'document', null, { title, visibility });
+    return back('ok', `"${title}" uploaded.`);
+  }
+  if (/^[0-9a-f-]{36}$/.test(id)) {
+    if (action === 'update') {
+      const visibility = String(form.get('visibility') ?? '');
+      if (!(visibility in VIS)) return back('error', 'Invalid visibility.');
+      await db.from('documents').update({ visibility, is_archived: form.get('is_archived') === 'on' }).eq('id', id);
+      await audit(me.id, 'document_updated', 'document', id, { visibility });
+      return back('ok', 'Document updated.');
+    }
+    if (action === 'delete') {
+      const { data: doc } = await db.from('documents').select('storage_path,title').eq('id', id).maybeSingle();
+      if (doc) {
+        await db.from('documents').delete().eq('id', id);
+        await createServiceClient().storage.from('documents').remove([doc.storage_path]);
+        await audit(me.id, 'document_deleted', 'document', id, { title: doc.title });
+      }
+      return back('ok', 'Document deleted.');
+    }
+  }
+  return back('error', 'Unknown action.');
+}
+const cat = Astro.url.searchParams.get('category') ?? '';
+let q = db.from('documents').select('id,title,category,visibility,doc_date,size_bytes,is_archived').order('category').order('doc_date', { ascending: false, nullsFirst: false });
+if (cat in CATEGORIES) q = q.eq('category', cat);
+const { data: docs } = await q;
+---
+<Shell title="Documents" area="admin">
+  <p class="eyebrow">Administrators only</p>
+  <h1>Documents</h1>
+  <details class="card">
+    <summary><strong>Upload a document</strong></summary>
+    <form method="post" enctype="multipart/form-data" class="form mt-2">
+      <input type="hidden" name="action" value="upload" />
+      <div class="grid grid-2">
+        <div class="field"><label for="file">File (PDF, Word or Excel, up to 50 MB)</label><input id="file" name="file" type="file" required accept=".pdf,.docx,.xlsx" /></div>
+        <div class="field"><label for="title">Title</label><input id="title" name="title" type="text" required maxlength="200" /></div>
+        <div class="field"><label for="category">Category</label><select id="category" name="category" required>{Object.entries(CATEGORIES).map(([k, v]) => <option value={k}>{v}</option>)}</select></div>
+        <div class="field"><label for="visibility">Who can see it</label><select id="visibility" name="visibility" required>{Object.entries(VIS).map(([k, v]) => <option value={k} selected={k === 'members'}>{v}</option>)}</select></div>
+        <div class="field"><label for="doc_date">Document date</label><input id="doc_date" name="doc_date" type="date" /></div>
+        <div class="field"><label for="description">Short description (optional)</label><input id="description" name="description" type="text" maxlength="500" /></div>
+      </div>
+      <div><button class="btn btn-primary" type="submit">Upload</button></div>
+    </form>
+  </details>
+  <form method="get" class="row mt-3"><label for="filter">Show</label><select id="filter" name="category" style="width:auto"><option value="">All categories</option>{Object.entries(CATEGORIES).map(([k, v]) => <option value={k} selected={k === cat}>{v}</option>)}</select><button class="btn btn-ghost btn-sm" type="submit">Filter</button><span class="small muted">{(docs ?? []).length} documents</span></form>
+  <div class="table-wrap mt-2"><table class="table">
+    <thead><tr><th>Document</th><th>Category</th><th>Visibility &amp; archive</th><th></th></tr></thead>
+    <tbody>{(docs ?? []).map((d) => (
+      <tr>
+        <td><a href={`/documents/${d.id}`}><strong>{d.title}</strong></a><div class="small muted">{d.doc_date ? fmtDate(d.doc_date) : 'Undated'} &middot; {fmtBytes(d.size_bytes)}</div></td>
+        <td>{CATEGORIES[d.category] ?? d.category}</td>
+        <td><form method="post" class="row"><input type="hidden" name="action" value="update" /><input type="hidden" name="id" value={d.id} />
+          <select name="visibility" aria-label="Visibility" style="width:auto">{Object.entries(VIS).map(([k, v]) => <option value={k} selected={k === d.visibility}>{v}</option>)}</select>
+          <label class="row small"><input type="checkbox" name="is_archived" checked={d.is_archived} /> Archived</label>
+          <button class="btn btn-ghost btn-sm" type="submit">Save</button></form></td>
+        <td><form method="post" class="inline-form"><input type="hidden" name="action" value="delete" /><input type="hidden" name="id" value={d.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form></td>
+      </tr>
+    ))}</tbody>
+  </table></div>
+</Shell>

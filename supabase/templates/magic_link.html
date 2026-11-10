@@ -1,0 +1,9 @@
+<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#17262d;max-width:520px;margin:0 auto;padding:24px">
+  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#5b7079;margin:0 0 6px">Village East Property Owners Association</p>
+  <h1 style="font-size:22px;margin:0 0 16px;color:#0b3340">Your sign-in code</h1>
+  <p style="margin:0 0 14px;line-height:1.55">Enter this code on the sign-in page. It expires in 10 minutes and can be used once.</p>
+  <p style="font-size:34px;letter-spacing:.3em;font-weight:700;background:#f1f8f9;border:1px solid #e1f0f2;border-radius:12px;padding:16px;text-align:center;margin:0 0 18px;color:#0b3340">{{ .Token }}</p>
+  <p style="margin:0 0 14px;line-height:1.55">Or continue on this device:</p>
+  <p style="margin:0 0 22px"><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email" style="background:#0f4c5c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block;font-weight:600">Sign in to Village East</a></p>
+  <p style="font-size:12px;color:#5b7079;border-top:1px solid #dde4e3;padding-top:12px;margin:0">If you did not try to sign in, you can ignore this email. Nobody can access your account without this code.</p>
+</div>

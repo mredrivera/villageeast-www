@@ -1,0 +1,53 @@
+---
+import Base from '~/layouts/Base.astro';
+import Icon from '~/components/Icon.astro';
+import { dateParts, fmtDate, fmtTime } from '~/lib/format';
+
+const { data } = await Astro.locals.supabase.from('events').select('id,title,kind,starts_at,location,description').order('starts_at');
+const now = Date.now();
+const all = data ?? [];
+const upcoming = all.filter((e) => new Date(e.starts_at).getTime() >= now);
+const past = all.filter((e) => new Date(e.starts_at).getTime() < now).reverse();
+const KIND: Record<string, [string, string]> = {
+  board_meeting: ['Board meeting', 'badge'], annual_meeting: ['Annual meeting', 'badge badge-amber'],
+  social: ['Social', 'badge badge-green'], cleanup: ['Clean-up', 'badge badge-sand'], other: ['Event', 'badge badge-sand'],
+};
+---
+<Base title="Meetings & events" description="Village East board meetings, the annual membership meeting and community events.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Calendar</p>
+    <h1>Meetings &amp; events</h1>
+    <p class="lead">All members are encouraged to attend board meetings. Dates and locations can change, so check here before you go.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap grid grid-2">
+    <div>
+      <h2>Upcoming</h2>
+      {upcoming.length === 0 ? <p class="empty">Nothing scheduled yet. Check back soon.</p> : (
+        <div class="card"><ul class="list">
+          {upcoming.map((e) => { const d = dateParts(e.starts_at); const [label, cls] = KIND[e.kind] ?? KIND.other; return (
+            <li class="event-row">
+              <div class="date-chip" aria-hidden="true"><b>{d.month}</b><span>{d.day}</span></div>
+              <div>
+                <div class="row"><strong>{e.title}</strong><span class={cls}>{label}</span></div>
+                <div class="small muted">{d.weekday}, {fmtDate(e.starts_at)} at {fmtTime(e.starts_at)}</div>
+                {e.location && <div class="small"><Icon name="pin" size={14} /> {e.location}</div>}
+                {e.description && <p class="small muted mb-0 mt-1">{e.description}</p>}
+              </div>
+            </li>
+          ); })}
+        </ul></div>
+      )}
+      <div class="panel mt-3"><strong>Agendas and minutes</strong><p class="small mb-0">Owners can read agendas and approved minutes in the <a href="/members/minutes">member area</a>.</p></div>
+    </div>
+    <div>
+      <h2>Earlier this year</h2>
+      {past.length === 0 ? <p class="empty">No past events.</p> : (
+        <div class="card"><ul class="list">
+          {past.map((e) => { const [label, cls] = KIND[e.kind] ?? KIND.other; return (
+            <li><div class="spread"><span><strong>{e.title}</strong><br /><span class="small muted">{fmtDate(e.starts_at)}{e.location && <> &middot; {e.location}</>}</span></span><span class={cls}>{label}</span></div></li>
+          ); })}
+        </ul></div>
+      )}
+    </div>
+  </div></section>
+</Base>

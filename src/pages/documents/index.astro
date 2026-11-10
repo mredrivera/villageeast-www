@@ -1,0 +1,35 @@
+---
+import Base from '~/layouts/Base.astro';
+import DocList, { type Doc } from '~/components/DocList.astro';
+import Icon from '~/components/Icon.astro';
+
+const { data } = await Astro.locals.supabase
+  .from('documents').select('id,title,description,category,doc_date,file_name,size_bytes,visibility,is_archived')
+  .eq('visibility', 'public').eq('is_archived', false).in('category', ['governing', 'rules', 'forms']).order('title');
+const docs = (data ?? []) as (Doc & { category: string })[];
+const order = ['Declaration of Protective Covenants', 'By-Laws (with cumulative revisions)', 'Articles of Incorporation'];
+const governing = docs.filter((d) => d.category === 'governing').sort((a, b) => (order.indexOf(a.title) + 99) % 99 - (order.indexOf(b.title) + 99) % 99);
+const rules = docs.filter((d) => d.category === 'rules');
+const forms = docs.filter((d) => d.category === 'forms');
+---
+<Base title="Documents" description="Village East governing documents, architectural guidelines, facility rules and forms.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Library</p>
+    <h1>Documents</h1>
+    <p class="lead">The covenants, by-laws, rules and paper forms that govern Village East. Financial reports, minutes and newsletters are in the owner area.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap grid grid-2">
+    <div class="stack">
+      <div class="card" id="governing"><h2>Governing documents</h2><DocList docs={governing} /></div>
+      <div class="card" id="forms"><h2>Paper forms</h2><p class="small muted">Prefer not to print? Owners can <a href="/forms">submit most of these online</a>.</p><DocList docs={forms} /></div>
+    </div>
+    <div class="stack">
+      <div class="card" id="rules"><h2>Rules &amp; policies</h2><DocList docs={rules} /></div>
+      <div class="panel">
+        <h3><Icon name="lock" size={18} /> For owners</h3>
+        <p class="small">Sign in to read financial reports, meeting minutes and agendas, newsletters, ballots and board rosters.</p>
+        <a class="btn btn-primary btn-sm" href="/members">Go to the owner area</a>
+      </div>
+    </div>
+  </div></section>
+</Base>

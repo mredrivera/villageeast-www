@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "villageeast-www",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Per-IP throttle for public forms and sign-in (10 requests per minute).
+  "ratelimits": [{ "name": "FORM_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+  "routes": [{ "pattern": "villageeast.toston.io", "custom_domain": true }],
+  // Non-secret configuration. Secrets (SUPABASE_SECRET_KEY, RESEND_API_KEY, TURNSTILE_SECRET_KEY)
+  // are set with `wrangler secret put` and never committed. See docs/SETUP.md.
+  "vars": {
+    "SITE_URL": "https://villageeast.toston.io",
+    "SUPABASE_URL": "https://YOUR-PROJECT-REF.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_REPLACE_ME",
+    "TURNSTILE_SITE_KEY": "REPLACE_ME",
+    "MAIL_FROM": "Village East <noreply@villageeast.toston.io>",
+    // Demo safety switch: the site will only ever send email to these addresses.
+    "MAIL_ALLOWLIST": "eduardo.m.rivera@gmail.com",
+    "ADMIN_NOTIFY_EMAIL": "eduardo.m.rivera@gmail.com"
+  }
+}

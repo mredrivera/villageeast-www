@@ -1,0 +1,20 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import DocList, { type Doc } from '~/components/DocList.astro';
+const { data } = await Astro.locals.supabase.from('documents').select('id,title,description,category,doc_date,file_name,size_bytes,visibility,is_archived')
+  .in('category', ['board', 'ballot', 'notice']).order('doc_date', { ascending: false, nullsFirst: false });
+const docs = (data ?? []) as (Doc & { category: string })[];
+const pick = (c: string, archived: boolean) => docs.filter((d) => d.category === c && !!d.is_archived === archived);
+---
+<Shell title="Board & committees" area="members">
+  <p class="eyebrow">Owners only</p>
+  <h1>Board &amp; committees</h1>
+  <p class="lead">Who serves the community, plus ballots and notices sent to the membership.</p>
+  <div class="grid grid-2 mt-3">
+    <section class="card"><h2 style="font-size:1.3rem">Current board &amp; committees</h2><DocList docs={pick('board', false)} />
+      <div class="panel small mt-2">Interested in serving? Four board seats opened in June 2026, and committees always welcome volunteers. <a href="/contact">Contact the board</a>.</div></section>
+    <section class="card"><h2 style="font-size:1.3rem">Notices to members</h2><DocList docs={pick('notice', false)} /></section>
+    <section class="card"><h2 style="font-size:1.3rem">Ballots &amp; proxies</h2><p class="small muted">Paper ballots from recent meetings. See <a href="/members/votes">Voting</a> for online ballots.</p><DocList docs={pick('ballot', false)} /></section>
+    <section class="card"><h2 style="font-size:1.3rem">Archive</h2><DocList docs={docs.filter((d) => d.is_archived)} empty="No archived items." /></section>
+  </div>
+</Shell>

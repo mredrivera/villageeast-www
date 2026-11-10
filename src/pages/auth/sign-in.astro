@@ -1,0 +1,53 @@
+---
+import Base from '~/layouts/Base.astro';
+import Turnstile from '~/components/Turnstile.astro';
+import Icon from '~/components/Icon.astro';
+import { safeNext } from '~/lib/auth';
+import { rememberLogin } from '~/lib/login-state';
+import { rateLimitOk, verifyTurnstile } from '~/lib/security';
+
+const next = safeNext(Astro.url.searchParams.get('next'));
+if (Astro.locals.user) return Astro.redirect(next, 303);
+
+let error = '';
+let email = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  email = String(form.get('email') ?? '').trim().toLowerCase();
+  if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(email)) error = 'Enter a valid email address.';
+  else if (!(await rateLimitOk(Astro.request, 'sign-in'))) error = 'Too many attempts. Please wait a minute and try again.';
+  else if (!(await verifyTurnstile(Astro.request, form.get('cf-turnstile-response')))) error = 'We could not confirm you are human. Please try again.';
+  else {
+    // shouldCreateUser:false => a code is only ever emailed to an existing, admin-created account.
+    const { error: otpError } = await Astro.locals.supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    if (otpError && otpError.status === 429) error = 'A code was sent recently. Please wait a moment before requesting another.';
+    else {
+      if (otpError && !/signups? not allowed|not found/i.test(otpError.message)) console.error('signInWithOtp', otpError.message);
+      // Same response whether or not the address has an account (no account enumeration).
+      rememberLogin(Astro.cookies, email, safeNext(String(form.get('next') ?? ''), next));
+      return Astro.redirect('/auth/verify', 303);
+    }
+  }
+}
+---
+<Base title="Owner sign in" noindex>
+  <div class="wrap">
+    <div class="card auth-card">
+      <div class="card-icon"><Icon name="lock" size={22} /></div>
+      <h1 class="mt-0" style="font-size:1.8rem">Owner sign in</h1>
+      <p class="muted">No password needed. Enter the email address on your account and we will send you a one-time code.</p>
+      {error && <div class="flash flash-error" role="alert">{error}</div>}
+      <form method="post" class="form" novalidate={false}>
+        <input type="hidden" name="next" value={next} />
+        <div class="field">
+          <label for="email">Email address</label>
+          <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" value={email} autofocus />
+        </div>
+        <Turnstile />
+        <button class="btn btn-primary w-full" type="submit">Email me a sign-in code</button>
+      </form>
+      <hr />
+      <p class="small muted mb-0">Don't have an account yet? <a href="/auth/request-access">Request owner access</a>. Accounts are verified against the lot roster before they are activated.</p>
+    </div>
+  </div>
+</Base>

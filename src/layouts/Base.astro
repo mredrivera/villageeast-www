@@ -1,0 +1,127 @@
+---
+import '~/styles/global.css';
+import Icon from '~/components/Icon.astro';
+import { site, publicNav } from '~/data/site';
+import { isMember, isStaff } from '~/lib/auth';
+
+interface Props { title: string; description?: string; noindex?: boolean }
+const { title, description = `${site.fullName}: a waterfront and water-access community on ${site.locality}.`, noindex = false } = Astro.props;
+const path = Astro.url.pathname;
+const { profile, user } = Astro.locals;
+const flashOk = Astro.url.searchParams.get('ok');
+const flashError = Astro.url.searchParams.get('error');
+const isCurrent = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
+const pageTitle = title === site.name ? `${site.name} | ${site.locality}` : `${title} | ${site.name}`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <meta name="theme-color" content="#0f4c5c" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {site.demoNotice && <div class="demo-ribbon">Preview site: a concept for a new Village East website. Not the official VEPOA site.</div>}
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="/" aria-label={`${site.name} home`}>
+          <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+            <rect width="40" height="40" rx="10" fill="#0f4c5c" />
+            <circle cx="28" cy="13" r="4.500" fill="#f0b77a" />
+            <path d="M4 26l9-11 6 7 4-4 13 8z" fill="#8fc3cc" />
+            <path d="M4 29c3 0 3-1.500 6-1.500s3 1.500 6 1.500 3-1.500 6-1.500 3 1.500 6 1.500 3-1.500 6-1.500v8H4z" fill="#e1f0f2" />
+          </svg>
+          <span>
+            <span class="brand-name">{site.name}</span>
+            <span class="brand-sub">Property Owners Association</span>
+          </span>
+        </a>
+        <nav class="main-nav nav-desktop" aria-label="Main">
+          <ul>
+            {publicNav.map((item) => (
+              <li><a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>{item.label}</a></li>
+            ))}
+          </ul>
+        </nav>
+        <details class="nav-details">
+          <summary class="nav-toggle"><Icon name="menu" size={18} /> Menu</summary>
+          <nav class="main-nav" aria-label="Main menu">
+            <ul>
+              {publicNav.map((item) => (
+                <li><a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>{item.label}</a></li>
+              ))}
+            </ul>
+          </nav>
+        </details>
+        <div class="header-cta">
+          {isStaff(profile) && <a class="btn btn-ghost btn-sm" href="/admin">Admin</a>}
+          {user
+            ? <a class="btn btn-primary btn-sm" href={isMember(profile) ? '/members' : '/auth/pending'}><Icon name="user" size={16} /> Members</a>
+            : <a class="btn btn-primary btn-sm" href="/auth/sign-in"><Icon name="lock" size={16} /> Owner sign in</a>}
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      {(flashOk || flashError) && (
+        <div class="wrap">
+          {flashOk && <div class="flash flash-ok" role="status">{flashOk.slice(0, 300)}</div>}
+          {flashError && <div class="flash flash-error" role="alert">{flashError.slice(0, 300)}</div>}
+        </div>
+      )}
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div>
+            <div class="footer-brand">{site.name}</div>
+            <p>{site.fullName}<br />{site.mailingAddress.join(', ')}</p>
+            <p>Pool &amp; clubhouse: {site.clubhouseAddress.join(', ')}</p>
+          </div>
+          <div>
+            <h3>Community</h3>
+            <ul>
+              <li><a href="/amenities">Amenities</a></li>
+              <li><a href="/map">Community map</a></li>
+              <li><a href="/meetings">Meetings &amp; events</a></li>
+              <li><a href="/contact">Contact the board</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Resources</h3>
+            <ul>
+              <li><a href="/documents">Governing documents</a></li>
+              <li><a href="/forms">Forms &amp; requests</a></li>
+              <li><a href="/realtors">Realtor information</a></li>
+              <li><a href="https://smlassociation.org/" rel="noopener noreferrer" target="_blank">Smith Mountain Lake Association</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Owners</h3>
+            <ul>
+              <li><a href="/members">Member area</a></li>
+              <li><a href="/members/financials">Financials</a></li>
+              <li><a href="/members/minutes">Minutes &amp; agendas</a></li>
+              <li><a href="/auth/request-access">Request an account</a></li>
+              {user && <li><form method="post" action="/auth/sign-out" class="inline-form"><button class="btn btn-light btn-sm" type="submit">Sign out</button></form></li>}
+            </ul>
+          </div>
+        </div>
+        <div class="footer-base">
+          <span>&copy; {new Date().getFullYear()} {site.fullName}</span>
+          <span><a href="/privacy">Privacy</a> &middot; Map data: Bedford County, VA GIS</span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

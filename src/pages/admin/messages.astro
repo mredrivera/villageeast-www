@@ -1,0 +1,34 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { isAdmin } from '~/lib/auth';
+import { fmtDateTime, withFlash } from '~/lib/format';
+const db = Astro.locals.supabase;
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const id = String(form.get('id') ?? '');
+  const action = String(form.get('action') ?? '');
+  if (/^[0-9a-f-]{36}$/.test(id)) {
+    if (action === 'toggle') await db.from('contact_messages').update({ handled: form.get('handled') === '1' }).eq('id', id);
+    if (action === 'delete' && isAdmin(Astro.locals.profile)) await db.from('contact_messages').delete().eq('id', id);
+  }
+  return Astro.redirect(withFlash('/admin/messages', 'ok', 'Updated.'), 303);
+}
+const { data } = await db.from('contact_messages').select('id,name,email,topic,message,handled,created_at').order('handled').order('created_at', { ascending: false }).limit(200);
+---
+<Shell title="Messages" area="admin">
+  <p class="eyebrow">Contact form</p>
+  <h1>Messages</h1>
+  {(data ?? []).length === 0 ? <p class="empty">No messages yet.</p> : (
+    <div class="stack">{(data ?? []).map((m) => (
+      <article class="card" style={m.handled ? 'opacity:.7' : ''}>
+        <div class="spread"><div><strong>{m.name}</strong> &middot; <a href={`mailto:${m.email}`}>{m.email}</a><div class="small muted">{fmtDateTime(m.created_at)} &middot; {m.topic}</div></div>
+          <div class="row">
+            {m.handled ? <span class="badge badge-lock">Handled</span> : <span class="badge badge-amber">New</span>}
+            <form method="post" class="inline-form"><input type="hidden" name="id" value={m.id} /><input type="hidden" name="action" value="toggle" /><input type="hidden" name="handled" value={m.handled ? '0' : '1'} /><button class="btn btn-ghost btn-sm" type="submit">{m.handled ? 'Mark as new' : 'Mark handled'}</button></form>
+            {isAdmin(Astro.locals.profile) && <form method="post" class="inline-form"><input type="hidden" name="id" value={m.id} /><input type="hidden" name="action" value="delete" /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>}
+          </div></div>
+        <p class="pre-line mt-2 mb-0">{m.message}</p>
+      </article>
+    ))}</div>
+  )}
+</Shell>

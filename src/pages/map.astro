@@ -1,0 +1,61 @@
+---
+import Base from '~/layouts/Base.astro';
+import Icon from '~/components/Icon.astro';
+import facts from '~/data/community-facts.json';
+import { isMember } from '~/lib/auth';
+const member = isMember(Astro.locals.profile);
+const civic = [
+  ['Fire & rescue district', facts.fireDistrict?.NAME],
+  ['Nearest fire station', facts.nearestFireStation ? `${facts.nearestFireStation.FIRE_COMPANY} (${facts.nearestFireStation.miles} mi)` : null],
+  ['Schools', [facts.elementary?.SCHOOL, facts.middle?.MIDDLE_SCHOOL, facts.high?.HIGH_SCHOOL].filter(Boolean).join(' · ')],
+  ['Voting precinct', facts.precinct ? `${facts.precinct.Precinct}, ${facts.precinct.PrecinctAddress}` : null],
+  ['Collection center', facts.collectionCenter ? `${facts.collectionCenter.SITE_NAME}, ${facts.collectionCenter.ADDRESS} (${facts.collectionCenter.HOURS})` : null],
+  ['Zoning', facts.zoning ? `${facts.zoning.ZONING} (${facts.zoning.ZONING_DISTRICT})` : null],
+].filter(([, v]) => v) as [string, string][];
+---
+<Base title="Community map" description="Interactive map of Village East lots, streets and amenities on Smith Mountain Lake.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Explore</p>
+    <h1>Community map</h1>
+    <p class="lead">Every lot in Village East, drawn from Bedford County's property records. Search for an address or tap a lot.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap">
+    <div class="map-layout">
+      <div>
+        <div class="map-frame">
+          <div class="map-search">
+            <label class="visually-hidden" for="map-q">Search by address or lot number</label>
+            <input id="map-q" type="search" placeholder="Search address or lot…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="map-results" />
+            <ul id="map-results" class="map-results" role="listbox" hidden></ul>
+          </div>
+          <div id="map" data-member={member ? '1' : '0'} data-bounds={JSON.stringify(facts.bounds)} role="application" aria-label="Map of Village East lots"></div>
+        </div>
+        <div class="map-legend" aria-label="Legend">
+          <span><i class="swatch swatch-home"></i>Lot with home</span>
+          <span><i class="swatch swatch-vacant"></i>Undeveloped lot</span>
+          <span><i class="swatch swatch-common"></i>Green belt &amp; common area</span>
+          <span><i class="swatch swatch-rec"></i>Pool &amp; recreation area</span>
+          <span><i class="swatch swatch-water"></i>Smith Mountain Lake</span>
+        </div>
+      </div>
+      <aside class="stack" aria-live="polite">
+        <div class="card" id="lot-panel">
+          <p class="eyebrow">Selected property</p>
+          <h2 id="lot-title" style="font-size:1.4rem">Tap a lot</h2>
+          <p id="lot-sub" class="muted">Lot lines, lot numbers and street addresses are public. {member ? 'As an owner you also see the owner of record and basic property facts.' : ''}</p>
+          <dl class="dl" id="lot-facts" hidden></dl>
+          <div id="lot-private" hidden></div>
+          {!member && <div class="panel small mt-2" id="lot-signin"><Icon name="lock" size={14} /> Owners can <a href="/auth/sign-in?next=/map">sign in</a> to see the owner of record and property details.</div>}
+        </div>
+        <div class="card">
+          <h3>Around Village East</h3>
+          <dl class="dl small">{civic.map(([k, v]) => <><dt>{k}</dt><dd>{v}</dd></>)}</dl>
+        </div>
+      </aside>
+    </div>
+    <p class="small muted mt-2">Source: {facts.source}, retrieved {facts.generatedAt}. For reference only; not a survey. Owner mailing addresses, sale prices and assessments are intentionally not shown.</p>
+  </div></section>
+</Base>
+<script>
+  import '~/scripts/map';
+</script>

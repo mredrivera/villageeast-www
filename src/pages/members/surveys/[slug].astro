@@ -1,0 +1,43 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import FormFields from '~/components/FormFields.astro';
+import { validateForm, type Answers, type Field } from '~/lib/forms/schema';
+import { withFlash } from '~/lib/format';
+
+const db = Astro.locals.supabase;
+const slug = Astro.params.slug ?? '';
+const { data: survey } = /^[a-z0-9-]{3,60}$/.test(slug) ? await db.from('surveys').select('id,title,intro,fields,status,anonymous,closes_at').eq('slug', slug).maybeSingle() : { data: null };
+if (!survey || survey.status === 'draft') return new Response('Not found', { status: 404 });
+const fields = survey.fields as Field[];
+const { data: receipt } = await db.from('survey_receipts').select('created_at').eq('survey_id', survey.id).maybeSingle();
+const open = survey.status === 'open' && (!survey.closes_at || new Date(survey.closes_at) > new Date());
+
+let values: Answers = {};
+let errors: Record<string, string> = {};
+let error = '';
+if (Astro.request.method === 'POST' && open && !receipt) {
+  const result = await validateForm(fields, await Astro.request.formData());
+  values = result.answers; errors = result.errors;
+  if (!result.ok) error = 'Please check the highlighted answers.';
+  else {
+    const { error: rpcError } = await db.rpc('submit_survey', { p_survey: survey.id, p_answers: result.answers });
+    if (rpcError) error = rpcError.code === 'P0002' || rpcError.code === 'P0001' ? rpcError.message : 'Could not save your answers. Please try again.';
+    else return Astro.redirect(withFlash('/members/surveys', 'ok', 'Thank you! Your answers have been recorded.'), 303);
+  }
+}
+---
+<Shell title={survey.title} area="members">
+  <p class="eyebrow">Survey</p>
+  <h1>{survey.title}</h1>
+  {survey.intro && <p class="lead">{survey.intro}</p>}
+  {receipt ? <div class="flash flash-ok">You have already answered this survey. Thank you!</div>
+    : !open ? <div class="flash flash-info">This survey is closed.</div>
+    : (
+      <form method="post" class="card form mt-3 narrow">
+        {error && <div class="flash flash-error" role="alert">{error}</div>}
+        <p class="small muted mb-0">{survey.anonymous ? 'This survey is anonymous: your answers are stored without your name or lot.' : 'Your answers are shared with the organizers together with your name and lot so they can follow up.'}</p>
+        <FormFields fields={fields} values={values} errors={errors} />
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Submit answers</button><a href="/members/surveys">Cancel</a></div>
+      </form>
+    )}
+</Shell>

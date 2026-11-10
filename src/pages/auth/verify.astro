@@ -1,0 +1,48 @@
+---
+import Base from '~/layouts/Base.astro';
+import Icon from '~/components/Icon.astro';
+import { safeNext } from '~/lib/auth';
+import { forgetLogin, recallLogin } from '~/lib/login-state';
+import { rateLimitOk } from '~/lib/security';
+import { audit } from '~/lib/supabase';
+
+const pending = recallLogin(Astro.cookies);
+if (!pending) return Astro.redirect('/auth/sign-in', 303);
+
+let error = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const token = String(form.get('code') ?? '').replace(/\D/g, '');
+  if (token.length !== 6) error = 'Enter the 6-digit code from the email.';
+  else if (!(await rateLimitOk(Astro.request, 'verify'))) error = 'Too many attempts. Please wait a minute and try again.';
+  else {
+    const { data, error: verifyError } = await Astro.locals.supabase.auth.verifyOtp({ email: pending.email, token, type: 'email' });
+    if (verifyError || !data.user) error = 'That code is incorrect or has expired. Check the latest email, or request a new code.';
+    else {
+      forgetLogin(Astro.cookies);
+      await audit(data.user.id, 'sign_in', 'profile', data.user.id);
+      return Astro.redirect(safeNext(pending.next), 303);
+    }
+  }
+}
+const masked = pending.email.replace(/^(.).*(@.*)$/, '$1•••$2');
+---
+<Base title="Enter your code" noindex>
+  <div class="wrap">
+    <div class="card auth-card">
+      <div class="card-icon"><Icon name="mail" size={22} /></div>
+      <h1 class="mt-0" style="font-size:1.8rem">Check your email</h1>
+      <p class="muted">If <strong>{masked}</strong> has a Village East account, a 6-digit code is on its way. It expires in 10 minutes.</p>
+      {error && <div class="flash flash-error" role="alert">{error}</div>}
+      <form method="post" class="form">
+        <div class="field">
+          <label for="code">Sign-in code</label>
+          <input id="code" class="otp-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus />
+        </div>
+        <button class="btn btn-primary w-full" type="submit">Sign in</button>
+      </form>
+      <hr />
+      <p class="small muted mb-0">Nothing arrived? Check your spam folder, or <a href="/auth/sign-in">start again</a>.</p>
+    </div>
+  </div>
+</Base>

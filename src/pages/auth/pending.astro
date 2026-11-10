@@ -1,0 +1,19 @@
+---
+import Base from '~/layouts/Base.astro';
+import { isMember } from '~/lib/auth';
+const { user, profile } = Astro.locals;
+if (!user) return Astro.redirect('/auth/sign-in', 303);
+const suspended = profile?.status === 'suspended';
+if (isMember(profile)) return Astro.redirect('/members', 303);
+---
+<Base title="Account pending" noindex>
+  <div class="wrap">
+    <div class="card auth-card">
+      <h1 class="mt-0" style="font-size:1.8rem">{suspended ? 'Account suspended' : 'Almost there'}</h1>
+      {suspended
+        ? <p>Your access to the member area has been suspended. Please <a href="/contact">contact the board</a> if you think this is a mistake.</p>
+        : <p>You are signed in as <strong>{user.email}</strong>, but an administrator still needs to confirm that this account belongs to a Village East owner. You will be able to see member content as soon as it is approved.</p>}
+      <form method="post" action="/auth/sign-out"><button class="btn btn-ghost" type="submit">Sign out</button></form>
+    </div>
+  </div>
+</Base>

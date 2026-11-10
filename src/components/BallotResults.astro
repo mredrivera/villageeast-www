@@ -1,0 +1,33 @@
+---
+export type Question = { id: string; prompt: string; detail: string | null; max_choices: number; options: { id: string; label: string }[] };
+interface Props { questions: Question[]; results: { question_id: string; option_id: string; votes: number }[]; turnout: { votes_cast: number; eligible_lots: number } | null }
+const { questions, results, turnout } = Astro.props;
+const count = (q: string, o: string) => Number(results.find((r) => r.question_id === q && r.option_id === o)?.votes ?? 0);
+---
+{turnout && (
+  <div class="kpi-grid mb-3">
+    <div class="kpi"><div class="kpi-label">Lots voted</div><div class="kpi-value">{turnout.votes_cast}</div></div>
+    <div class="kpi"><div class="kpi-label">Eligible lots</div><div class="kpi-value">{turnout.eligible_lots}</div></div>
+    <div class="kpi"><div class="kpi-label">Turnout</div><div class="kpi-value">{turnout.eligible_lots ? Math.round((turnout.votes_cast / turnout.eligible_lots) * 100) : 0}%</div></div>
+  </div>
+)}
+{questions.map((q) => {
+  const rows = q.options.map((o) => ({ label: o.label, votes: count(q.id, o.id) }));
+  const max = Math.max(1, ...rows.map((r) => r.votes));
+  const total = rows.reduce((t, r) => t + r.votes, 0);
+  const top = Math.max(...rows.map((r) => r.votes));
+  return (
+    <section class="card mb-2">
+      <h3>{q.prompt}</h3>
+      <div class="bars">
+        {rows.map((r) => (
+          <div class:list={['bar-row', { 'is-winner': r.votes === top && top > 0 }]}>
+            <span>{r.label}</span>
+            <span class="bar-track"><span class="bar-fill" style={`width:${(r.votes / max) * 100}%`}></span></span>
+            <span class="num">{r.votes}{total > 0 && q.max_choices === 1 && <span class="small muted"> ({Math.round((r.votes / total) * 100)}%)</span>}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+})}

@@ -1,0 +1,90 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { fmtDateTime, withFlash } from '~/lib/format';
+import { audit } from '~/lib/supabase';
+const db = Astro.locals.supabase;
+const me = Astro.locals.profile!;
+const back = (kind: 'ok' | 'error', msg: string) => Astro.redirect(withFlash('/admin/content', kind, msg), 303);
+function easternToIso(local: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null;
+  for (const offset of ['-04:00', '-05:00']) {
+    const d = new Date(`${local}:00${offset}`);
+    if (new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/New_York', dateStyle: 'short', timeStyle: 'short' }).format(d).replace(' ', 'T') === local) return d.toISOString();
+  }
+  return null;
+}
+const KINDS = { board_meeting: 'Board meeting', annual_meeting: 'Annual meeting', social: 'Social', cleanup: 'Clean-up', other: 'Other' };
+const VIS = { public: 'Everyone', members: 'Owners only' };
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const id = String(form.get('id') ?? '');
+  const visibility = String(form.get('visibility') ?? 'public');
+  if (action === 'add_event') {
+    const title = String(form.get('title') ?? '').trim();
+    const starts = easternToIso(String(form.get('starts_at') ?? ''));
+    const kind = String(form.get('kind') ?? 'other');
+    if (title.length < 2 || title.length > 160 || !starts || !(kind in KINDS) || !(visibility in VIS)) return back('error', 'Enter a title, date and time.');
+    const { error } = await db.from('events').insert({ title, kind, starts_at: starts, location: String(form.get('location') ?? '').trim().slice(0, 200) || null, description: String(form.get('description') ?? '').trim().slice(0, 2000) || null, visibility });
+    if (error) return back('error', 'Could not add the event.');
+    await audit(me.id, 'event_created', 'event', null, { title });
+    return back('ok', 'Event added to the calendar.');
+  }
+  if (action === 'add_news') {
+    const title = String(form.get('title') ?? '').trim();
+    const body = String(form.get('body') ?? '').trim();
+    if (title.length < 2 || title.length > 160 || body.length < 2 || body.length > 8000 || !(visibility in VIS)) return back('error', 'Enter a title and some text.');
+    const { error } = await db.from('announcements').insert({ title, body, visibility, pinned: form.get('pinned') === 'on' });
+    if (error) return back('error', 'Could not post the announcement.');
+    await audit(me.id, 'announcement_created', 'announcement', null, { title });
+    return back('ok', 'Announcement posted.');
+  }
+  if ((action === 'delete_event' || action === 'delete_news') && /^[0-9a-f-]{36}$/.test(id)) {
+    await db.from(action === 'delete_event' ? 'events' : 'announcements').delete().eq('id', id);
+    await audit(me.id, action, action === 'delete_event' ? 'event' : 'announcement', id);
+    return back('ok', 'Deleted.');
+  }
+  return back('error', 'Unknown action.');
+}
+const [{ data: events }, { data: news }] = await Promise.all([
+  db.from('events').select('id,title,kind,starts_at,location,visibility').order('starts_at', { ascending: false }).limit(60),
+  db.from('announcements').select('id,title,visibility,pinned,published_at').order('published_at', { ascending: false }).limit(60),
+]);
+---
+<Shell title="News & events" area="admin">
+  <p class="eyebrow">Board tools</p>
+  <h1>News &amp; events</h1>
+  <div class="grid grid-2">
+    <section>
+      <h2>Announcements</h2>
+      <form method="post" class="card form">
+        <input type="hidden" name="action" value="add_news" />
+        <div class="field"><label for="n_title">Title</label><input id="n_title" name="title" type="text" required maxlength="160" /></div>
+        <div class="field"><label for="n_body">Text</label><textarea id="n_body" name="body" rows="4" required maxlength="8000"></textarea></div>
+        <div class="row"><select name="visibility" aria-label="Who can see it" style="width:auto">{Object.entries(VIS).map(([k, v]) => <option value={k}>{v}</option>)}</select><label class="row"><input type="checkbox" name="pinned" /> Feature at the top</label><button class="btn btn-primary btn-sm" type="submit">Post</button></div>
+      </form>
+      <div class="card mt-2"><ul class="list">{(news ?? []).map((n) => (
+        <li class="spread"><span><strong>{n.title}</strong><div class="small muted">{fmtDateTime(n.published_at)} &middot; {VIS[n.visibility as keyof typeof VIS] ?? n.visibility}{n.pinned && ' · featured'}</div></span>
+          <form method="post" class="inline-form"><input type="hidden" name="action" value="delete_news" /><input type="hidden" name="id" value={n.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form></li>
+      ))}</ul></div>
+    </section>
+    <section>
+      <h2>Calendar</h2>
+      <form method="post" class="card form">
+        <input type="hidden" name="action" value="add_event" />
+        <div class="field"><label for="e_title">Title</label><input id="e_title" name="title" type="text" required maxlength="160" /></div>
+        <div class="grid grid-2">
+          <div class="field"><label for="e_start">Date &amp; time (Eastern)</label><input id="e_start" name="starts_at" type="datetime-local" required /></div>
+          <div class="field"><label for="e_kind">Type</label><select id="e_kind" name="kind">{Object.entries(KINDS).map(([k, v]) => <option value={k}>{v}</option>)}</select></div>
+        </div>
+        <div class="field"><label for="e_loc">Location</label><input id="e_loc" name="location" type="text" maxlength="200" /></div>
+        <div class="field"><label for="e_desc">Details</label><textarea id="e_desc" name="description" rows="2" maxlength="2000"></textarea></div>
+        <div class="row"><select name="visibility" aria-label="Who can see it" style="width:auto">{Object.entries(VIS).map(([k, v]) => <option value={k}>{v}</option>)}</select><button class="btn btn-primary btn-sm" type="submit">Add event</button></div>
+      </form>
+      <div class="card mt-2"><ul class="list">{(events ?? []).map((e) => (
+        <li class="spread"><span><strong>{e.title}</strong><div class="small muted">{fmtDateTime(e.starts_at)}{e.location && ` · ${e.location}`}</div></span>
+          <form method="post" class="inline-form"><input type="hidden" name="action" value="delete_event" /><input type="hidden" name="id" value={e.id} /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form></li>
+      ))}</ul></div>
+    </section>
+  </div>
+</Shell>

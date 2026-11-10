@@ -1,0 +1,20 @@
+---
+import Shell from '~/layouts/Shell.astro';
+const profile = Astro.locals.profile!;
+const { data } = await Astro.locals.supabase.rpc('member_directory');
+const rows = (data ?? []) as { full_name: string; address: string | null; lot_label: string | null; email: string | null; phone: string | null }[];
+---
+<Shell title="Neighbor directory" area="members">
+  <p class="eyebrow">Owners only &middot; opt-in</p>
+  <h1>Neighbor directory</h1>
+  <p class="lead">Only neighbors who chose to be listed appear here, and only with the details they chose to share.</p>
+  {!profile.directory_opt_in && <div class="flash flash-info">You are not listed. <a href="/members/profile">Choose what to share</a> to add yourself.</div>}
+  {rows.length === 0 ? <p class="empty mt-3">Nobody has opted in yet. Be the first!</p> : (
+    <div class="table-wrap mt-3"><table class="table">
+      <thead><tr><th>Name</th><th>Address</th><th>Email</th><th>Phone</th></tr></thead>
+      <tbody>{rows.map((r) => (
+        <tr><td><strong>{r.full_name || '—'}</strong></td><td>{r.address ?? r.lot_label ?? '—'}</td><td>{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span class="muted">Not shared</span>}</td><td>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : <span class="muted">Not shared</span>}</td></tr>
+      ))}</tbody>
+    </table></div>
+  )}
+</Shell>

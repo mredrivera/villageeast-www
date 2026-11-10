@@ -1,0 +1,125 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { isStaff } from '~/lib/auth';
+import { config } from '~/lib/env';
+import { getForm, STATUS_LABEL } from '~/lib/forms/definitions';
+import { displayAnswer, isInput, type Answers } from '~/lib/forms/schema';
+import { fmtBytes, fmtDateTime, withFlash } from '~/lib/format';
+import { notifyAdmin, sendMail } from '~/lib/mail';
+import { audit } from '~/lib/supabase';
+
+const db = Astro.locals.supabase;
+const profile = Astro.locals.profile!;
+const staff = isStaff(profile);
+const id = Astro.params.id ?? '';
+if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Not found', { status: 404 });
+// RLS: members only ever get their own submissions back; staff get all.
+const { data: sub } = await db.from('form_submissions').select('id,reference,form_type,user_id,lot_id,summary,data,status,decision_note,created_at,updated_at').eq('id', id).maybeSingle();
+if (!sub) return new Response('Not found', { status: 404 });
+const def = getForm(sub.form_type);
+const self = `/members/requests/${id}`;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const note = String(form.get('note') ?? '').trim().slice(0, 4000);
+  const { data: owner } = await db.from('profiles').select('email,full_name').eq('id', sub.user_id).maybeSingle();
+  if (action === 'comment') {
+    if (note.length < 2) return Astro.redirect(withFlash(self, 'error', 'Write a comment first.'), 303);
+    const { error } = await db.from('submission_events').insert({ submission_id: id, actor: profile.id, kind: 'comment', note });
+    if (error) return Astro.redirect(withFlash(self, 'error', 'Could not add your comment.'), 303);
+    if (staff && owner && sub.user_id !== profile.id) await sendMail({ to: owner.email, subject: `New comment on ${sub.reference}`, heading: `New comment on ${sub.reference}`, lines: [note], action: { label: 'Open your request', url: config.siteUrl + self } });
+    else await notifyAdmin(`${sub.reference}: owner comment`, `Comment on ${sub.reference}`, [note], self);
+    return Astro.redirect(withFlash(self, 'ok', 'Comment added.'), 303);
+  }
+  if (action === 'status' && staff) {
+    const status = String(form.get('status') ?? '');
+    if (!['in_review', 'needs_info', 'approved', 'denied', 'withdrawn'].includes(status)) return Astro.redirect(withFlash(self, 'error', 'Choose a status.'), 303);
+    const { error } = await db.from('form_submissions').update({ status, decision_note: note || null }).eq('id', id);
+    if (error) return Astro.redirect(withFlash(self, 'error', 'Could not update the request.'), 303);
+    await db.from('submission_events').insert({ submission_id: id, actor: profile.id, kind: 'status', status, note: note || null });
+    await audit(profile.id, 'submission_status', 'form_submission', id, { status });
+    if (owner) await sendMail({ to: owner.email, subject: `${sub.reference}: ${STATUS_LABEL[status]}`, heading: `Your request is now: ${STATUS_LABEL[status]}`, lines: [`${def?.title ?? 'Request'} ${sub.reference}`, ...(note ? [note] : [])], action: { label: 'Open your request', url: config.siteUrl + self } });
+    return Astro.redirect(withFlash(self, 'ok', `Status changed to "${STATUS_LABEL[status]}".`), 303);
+  }
+  return Astro.redirect(self, 303);
+}
+
+const [{ data: files }, { data: events }, { data: owner }, { data: lot }] = await Promise.all([
+  db.from('submission_files').select('id,file_name,mime_type,size_bytes').eq('submission_id', id).order('created_at'),
+  db.from('submission_events').select('id,actor,kind,status,note,created_at').eq('submission_id', id).order('created_at'),
+  staff ? db.from('profiles').select('full_name,email,phone').eq('id', sub.user_id).maybeSingle() : Promise.resolve({ data: null }),
+  sub.lot_id ? db.from('lots').select('label,section,address').eq('id', sub.lot_id).maybeSingle() : Promise.resolve({ data: null }),
+]);
+const answers = sub.data as Answers;
+const badge: Record<string, string> = { approved: 'badge badge-green', denied: 'badge badge-red', needs_info: 'badge badge-amber', withdrawn: 'badge badge-lock' };
+const steps = ['submitted', 'in_review', ['approved', 'denied', 'withdrawn'].includes(sub.status) ? sub.status : 'approved'];
+const reached = sub.status === 'submitted' ? 0 : ['in_review', 'needs_info'].includes(sub.status) ? 1 : 2;
+---
+<Shell title={sub.reference} area={staff && sub.user_id !== profile.id ? 'admin' : 'members'}>
+  <p class="eyebrow"><a href={staff && sub.user_id !== profile.id ? '/admin/requests' : '/members/requests'}>Requests</a></p>
+  <div class="spread"><h1 class="mb-0">{sub.reference}</h1><span class={badge[sub.status] ?? 'badge'} style="font-size:.9rem;padding:6px 14px">{STATUS_LABEL[sub.status] ?? sub.status}</span></div>
+  <p class="lead">{def?.title ?? sub.form_type} &middot; submitted {fmtDateTime(sub.created_at)}</p>
+
+  <ol class="row mt-2 mb-3" style="list-style:none;padding:0;gap:6px" aria-label="Progress">
+    {steps.map((s, i) => (<li class:list={['badge', i <= reached ? (i === 2 && sub.status === 'denied' ? 'badge-red' : 'badge-green') : 'badge-lock']} style="padding:6px 12px">{i + 1}. {i === 2 && reached < 2 ? 'Decision' : STATUS_LABEL[s as string]}</li>))}
+  </ol>
+  {sub.status === 'needs_info' && <div class="flash flash-info">The reviewers need more information. See the latest note below and reply with a comment.</div>}
+
+  <div class="grid grid-2">
+    <div class="stack">
+      <section class="card">
+        <h2 style="font-size:1.25rem">Request details</h2>
+        <dl class="dl">
+          <dt>Property</dt><dd>{lot ? `${lot.address ?? lot.label} (Section ${lot.section}, ${lot.label})` : '—'}</dd>
+          {owner && <><dt>Submitted by</dt><dd>{owner.full_name || '—'} &middot; <a href={`mailto:${owner.email}`}>{owner.email}</a>{owner.phone && <> &middot; {owner.phone}</>}</dd></>}
+          {def ? def.fields.filter(isInput).filter((f) => f.type !== 'files').map((f) => (<><dt>{f.label.length > 60 ? f.label.slice(0, 57) + '…' : f.label}</dt><dd class="pre-line">{displayAnswer(f, answers[f.name])}</dd></>))
+               : Object.entries(answers).map(([k, v]) => <><dt>{k}</dt><dd>{String(v ?? '—')}</dd></>)}
+        </dl>
+      </section>
+      <section class="card">
+        <h2 style="font-size:1.25rem">Attachments</h2>
+        {(files ?? []).length === 0 ? <p class="muted mb-0">No files attached.</p> : (
+          <ul class="list">{(files ?? []).map((f) => (
+            <li class="spread"><span><Icon name="file" size={16} /> {f.file_name} <span class="small muted">({fmtBytes(f.size_bytes)})</span></span><a class="btn btn-ghost btn-sm" href={`/members/requests/file/${f.id}`}>Open</a></li>
+          ))}</ul>
+        )}
+      </section>
+    </div>
+    <div class="stack">
+      <section class="card">
+        <h2 style="font-size:1.25rem">Activity</h2>
+        <ol class="timeline">
+          {(events ?? []).map((e) => (
+            <li>
+              <strong>{e.kind === 'submitted' ? 'Request submitted' : e.kind === 'status' ? `Status: ${STATUS_LABEL[e.status ?? ''] ?? e.status}` : e.actor === sub.user_id ? 'Comment from the owner' : 'Comment from the reviewers'}</strong>
+              <div class="small muted">{fmtDateTime(e.created_at)}</div>
+              {e.note && <p class="pre-line mb-0 mt-1">{e.note}</p>}
+            </li>
+          ))}
+        </ol>
+        <form method="post" class="form mt-3">
+          <input type="hidden" name="action" value="comment" />
+          <div class="field"><label for="note">Add a comment</label><textarea id="note" name="note" rows="3" maxlength="4000" required></textarea></div>
+          <div><button class="btn btn-ghost" type="submit">Post comment</button></div>
+        </form>
+      </section>
+      {staff && (
+        <section class="card" style="border-color:var(--sunset-500)">
+          <h2 style="font-size:1.25rem">Reviewer decision</h2>
+          <form method="post" class="form">
+            <input type="hidden" name="action" value="status" />
+            <div class="field"><label for="status">Set status</label>
+              <select id="status" name="status" required>
+                {['in_review', 'needs_info', 'approved', 'denied', 'withdrawn'].map((s) => <option value={s} selected={s === sub.status}>{STATUS_LABEL[s]}</option>)}
+              </select></div>
+            <div class="field"><label for="dnote">Note to the owner (optional)</label><textarea id="dnote" name="note" rows="3" maxlength="4000">{sub.decision_note ?? ''}</textarea></div>
+            <div><button class="btn btn-primary" type="submit">Update request</button></div>
+            <p class="small muted mb-0">The owner is notified by email and the change is recorded in the audit log.</p>
+          </form>
+        </section>
+      )}
+    </div>
+  </div>
+</Shell>

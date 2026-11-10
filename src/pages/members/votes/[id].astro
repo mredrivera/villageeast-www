@@ -1,0 +1,96 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import BallotResults, { type Question } from '~/components/BallotResults.astro';
+import Icon from '~/components/Icon.astro';
+import { isStaff } from '~/lib/auth';
+import { fmtDateTime, withFlash } from '~/lib/format';
+import { audit } from '~/lib/supabase';
+
+const db = Astro.locals.supabase;
+const profile = Astro.locals.profile!;
+const id = Astro.params.id ?? '';
+if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Not found', { status: 404 });
+const [{ data: ballot }, { data: qs }, { data: receipt }, { data: turnoutRows }] = await Promise.all([
+  db.from('ballots').select('id,title,description,opens_at,closes_at,status').eq('id', id).maybeSingle(),
+  db.from('ballot_questions').select('id,prompt,detail,max_choices,options').eq('ballot_id', id).order('position'),
+  db.from('ballot_receipts').select('cast_at').eq('ballot_id', id).maybeSingle(),
+  db.rpc('ballot_turnout', { p_ballot: id }),
+]);
+if (!ballot) return new Response('Not found', { status: 404 });
+const questions = (qs ?? []) as Question[];
+const now = Date.now();
+const state = ballot.status !== 'published' ? 'draft' : now < Date.parse(ballot.opens_at) ? 'upcoming' : now < Date.parse(ballot.closes_at) ? 'open' : 'closed';
+const turnout = (turnoutRows as { votes_cast: number; eligible_lots: number }[] | null)?.[0] ?? null;
+
+let error = '';
+if (Astro.request.method === 'POST' && state === 'open' && !receipt) {
+  const form = await Astro.request.formData();
+  const choices: Record<string, string[]> = {};
+  for (const q of questions) {
+    const picked = [...new Set(form.getAll(`q_${q.id}`).filter((v): v is string => typeof v === 'string'))];
+    if (picked.length > q.max_choices) error = `Choose at most ${q.max_choices} for "${q.prompt}".`;
+    choices[q.id] = picked;
+  }
+  if (!error && form.get('confirm') !== 'on') error = 'Please confirm that you are casting the vote for your lot.';
+  if (!error) {
+    // The database function enforces everything again: membership, open window, one vote per lot.
+    const { error: rpcError } = await db.rpc('cast_ballot', { p_ballot: id, p_choices: choices });
+    if (rpcError) error = ['P0001', 'P0002'].includes(rpcError.code ?? '') ? rpcError.message : 'Your vote could not be recorded. Please try again.';
+    else {
+      await audit(profile.id, 'ballot_cast', 'ballot', id, { lot: profile.lot_id }); // records THAT the lot voted, never the choices
+      return Astro.redirect(withFlash(`/members/votes/${id}`, 'ok', 'Your vote has been recorded. Thank you for voting!'), 303);
+    }
+  }
+}
+const showResults = state === 'closed' || isStaff(profile);
+const { data: results } = showResults ? await db.rpc('ballot_results', { p_ballot: id }) : { data: null };
+---
+<Shell title={ballot.title} area="members">
+  <p class="eyebrow"><a href="/members/votes">Voting</a></p>
+  <h1>{ballot.title}</h1>
+  <div class="row mb-2">
+    {state === 'open' && <span class="badge badge-green">Voting open until {fmtDateTime(ballot.closes_at)}</span>}
+    {state === 'upcoming' && <span class="badge badge-sand">Opens {fmtDateTime(ballot.opens_at)}</span>}
+    {state === 'closed' && <span class="badge badge-lock">Closed {fmtDateTime(ballot.closes_at)}</span>}
+    {state === 'draft' && <span class="badge badge-amber">Draft (not visible to members)</span>}
+    {turnout && state !== 'draft' && <span class="badge">{turnout.votes_cast} of {turnout.eligible_lots} lots have voted</span>}
+  </div>
+  {ballot.description && <p class="lead pre-line">{ballot.description}</p>}
+
+  {receipt && <div class="flash flash-ok"><Icon name="check" /> <span>A vote for your lot was recorded on {fmtDateTime(receipt.cast_at)}. {state === 'open' && 'Results will appear here when voting closes.'}</span></div>}
+
+  {state === 'open' && !receipt && (
+    profile.lot_id ? (
+      <form method="post" class="form mt-3 narrow">
+        {error && <div class="flash flash-error" role="alert">{error}</div>}
+        {questions.map((q, i) => (
+          <fieldset class="card field">
+            <legend class="visually-hidden">Question {i + 1}</legend>
+            <p class="eyebrow mb-0">Question {i + 1} of {questions.length}</p>
+            <h2 style="font-size:1.25rem">{q.prompt}</h2>
+            {q.detail && <p class="small muted">{q.detail}</p>}
+            {q.max_choices > 1 && <p class="help">Choose up to {q.max_choices}.</p>}
+            <div class="choices">
+              {q.options.map((o) => (
+                <label class="choice"><input type={q.max_choices === 1 ? 'radio' : 'checkbox'} name={`q_${q.id}`} value={o.id} /><span>{o.label}</span></label>
+              ))}
+            </div>
+            <p class="help">Leave blank to abstain on this question.</p>
+          </fieldset>
+        ))}
+        <div class="card">
+          <label class="choice"><input type="checkbox" name="confirm" required /><span>I am casting the single vote for my lot. I understand it is final and cannot be changed.</span></label>
+          <div class="form-actions mt-2"><button class="btn btn-accent" type="submit"><Icon name="ballot" size={18} /> Cast vote</button></div>
+          <p class="small muted mb-0 mt-2"><Icon name="shield" size={14} /> Secret ballot: your choices are stored without any link to you or your lot.</p>
+        </div>
+      </form>
+    ) : <div class="flash flash-error">Your account is not linked to a lot, so it cannot vote.</div>
+  )}
+
+  {showResults && results && (
+    <section class="mt-3">
+      <h2>{state === 'closed' ? 'Results' : 'Live tally (board only)'}</h2>
+      <BallotResults questions={questions} results={results} turnout={turnout} />
+    </section>
+  )}
+</Shell>

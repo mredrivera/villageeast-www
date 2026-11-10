@@ -1,0 +1,40 @@
+---
+/**
+ * Landing page for the "Sign in" button in the email. The token is only redeemed on POST, so email
+ * security scanners that pre-fetch links cannot burn the one-time token.
+ */
+import Base from '~/layouts/Base.astro';
+import { safeNext } from '~/lib/auth';
+import { forgetLogin, recallLogin } from '~/lib/login-state';
+import { audit } from '~/lib/supabase';
+
+let tokenHash = Astro.url.searchParams.get('token_hash') ?? '';
+let error = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  tokenHash = String(form.get('token_hash') ?? '');
+  if (!/^[A-Za-z0-9_-]{16,256}$/.test(tokenHash)) error = 'This sign-in link is not valid.';
+  else {
+    const { data, error: verifyError } = await Astro.locals.supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+    if (verifyError || !data.user) error = 'This sign-in link has expired or was already used.';
+    else {
+      const next = safeNext(recallLogin(Astro.cookies)?.next);
+      forgetLogin(Astro.cookies);
+      await audit(data.user.id, 'sign_in', 'profile', data.user.id, { via: 'link' });
+      return Astro.redirect(next, 303);
+    }
+  }
+}
+---
+<Base title="Confirm sign in" noindex>
+  <div class="wrap">
+    <div class="card auth-card center">
+      <h1 class="mt-0" style="font-size:1.8rem">Finish signing in</h1>
+      {error
+        ? <><div class="flash flash-error" role="alert">{error}</div><a class="btn btn-primary" href="/auth/sign-in">Request a new code</a></>
+        : tokenHash
+          ? <form method="post"><input type="hidden" name="token_hash" value={tokenHash} /><p class="muted">Press continue to sign in to the Village East member area on this device.</p><button class="btn btn-primary" type="submit">Continue</button></form>
+          : <a class="btn btn-primary" href="/auth/sign-in">Go to sign in</a>}
+    </div>
+  </div>
+</Base>

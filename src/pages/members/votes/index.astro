@@ -1,0 +1,37 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { fmtDateTime } from '~/lib/format';
+const db = Astro.locals.supabase;
+const [{ data: ballots }, { data: receipts }] = await Promise.all([
+  db.from('ballots').select('id,title,description,opens_at,closes_at,status').eq('status', 'published').order('closes_at', { ascending: false }),
+  db.from('ballot_receipts').select('ballot_id'),
+]);
+const voted = new Set((receipts ?? []).map((r) => r.ballot_id));
+const now = Date.now();
+const state = (b: { opens_at: string; closes_at: string }) => (now < Date.parse(b.opens_at) ? 'upcoming' : now < Date.parse(b.closes_at) ? 'open' : 'closed');
+---
+<Shell title="Voting" area="members">
+  <p class="eyebrow">One lot, one vote</p>
+  <h1>Voting</h1>
+  <p class="lead">Cast your lot's vote from any device. Ballots are secret: the system records that your lot voted, never how.</p>
+  {!Astro.locals.profile!.lot_id && <div class="flash flash-error">Your account is not linked to a lot, so it cannot vote. Please contact an administrator.</div>}
+  <div class="stack mt-3">
+    {(ballots ?? []).length === 0 && <p class="empty">There are no ballots right now.</p>}
+    {(ballots ?? []).map((b) => { const s = state(b); return (
+      <a class="card card-link" href={`/members/votes/${b.id}`}>
+        <div class="spread">
+          <div>
+            <div class="row">
+              {s === 'open' && <span class="badge badge-green">Voting open</span>}{s === 'upcoming' && <span class="badge badge-sand">Opens {fmtDateTime(b.opens_at)}</span>}{s === 'closed' && <span class="badge badge-lock">Closed</span>}
+              {voted.has(b.id) && <span class="badge"><Icon name="check" size={12} /> Your lot has voted</span>}
+            </div>
+            <h2 class="mt-1" style="font-size:1.3rem">{b.title}</h2>
+            <p class="small muted mb-0">{s === 'closed' ? `Closed ${fmtDateTime(b.closes_at)}. Results available.` : `Closes ${fmtDateTime(b.closes_at)}`}</p>
+          </div>
+          <span class="btn btn-ghost btn-sm">{s === 'open' && !voted.has(b.id) ? 'Vote now' : s === 'closed' ? 'See results' : 'View'} <Icon name="arrow" size={14} /></span>
+        </div>
+      </a>
+    ); })}
+  </div>
+</Shell>

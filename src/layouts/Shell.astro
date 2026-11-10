@@ -1,0 +1,29 @@
+---
+import Base from './Base.astro';
+import Icon from '~/components/Icon.astro';
+import { memberNav, adminNav } from '~/data/site';
+import { isAdmin } from '~/lib/auth';
+
+interface Props { title: string; area: 'members' | 'admin'; wide?: boolean }
+const { title, area } = Astro.props;
+const path = Astro.url.pathname;
+const admin = isAdmin(Astro.locals.profile);
+const items = area === 'admin' ? adminNav.filter((i) => !i.adminOnly || admin) : memberNav;
+const root = area === 'admin' ? '/admin' : '/members';
+const isCurrent = (href: string) => (href === root ? path === root : path === href || path.startsWith(href + '/'));
+---
+<Base title={title} noindex>
+  <div class="wrap shell">
+    <nav class="side-nav" aria-label={area === 'admin' ? 'Admin' : 'Member area'}>
+      <h2>{area === 'admin' ? 'Administration' : 'Member area'}</h2>
+      <ul>
+        {items.map((item) => (
+          <li><a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}><Icon name={item.icon} size={18} />{item.label}</a></li>
+        ))}
+      </ul>
+    </nav>
+    <div class="shell-main">
+      <slot />
+    </div>
+  </div>
+</Base>

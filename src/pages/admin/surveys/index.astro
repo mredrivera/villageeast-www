@@ -1,0 +1,67 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { checkSchema } from '~/lib/forms/schema';
+import { fmtDate, withFlash } from '~/lib/format';
+import { audit } from '~/lib/supabase';
+const db = Astro.locals.supabase;
+const me = Astro.locals.profile!;
+const EXAMPLE = JSON.stringify([
+  { type: 'radio', name: 'pool_hours', label: 'Should the pool stay open later on weekends?', required: true, options: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }, { value: 'unsure', label: 'Not sure' }] },
+  { type: 'scale', name: 'satisfaction', label: 'How satisfied are you with road maintenance?', min: 1, max: 5, minLabel: 'Not at all', maxLabel: 'Very' },
+  { type: 'textarea', name: 'comments', label: 'Anything else?', maxLength: 1000 },
+], null, 2);
+let error = '';
+const v = { title: '', slug: '', intro: '', fields: EXAMPLE, anonymous: false };
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  v.title = String(form.get('title') ?? '').trim();
+  v.slug = String(form.get('slug') ?? '').trim().toLowerCase();
+  v.intro = String(form.get('intro') ?? '').trim();
+  v.fields = String(form.get('fields') ?? '');
+  v.anonymous = form.get('anonymous') === 'on';
+  let parsed: unknown = null;
+  try { parsed = JSON.parse(v.fields); } catch { error = 'The questions are not valid JSON.'; }
+  if (!error) error = checkSchema(parsed) ?? '';
+  if (!error && (v.title.length < 3 || v.title.length > 160)) error = 'Give the survey a title.';
+  if (!error && !/^[a-z0-9-]{3,60}$/.test(v.slug)) error = 'The web address may only contain lower-case letters, digits and dashes.';
+  if (!error) {
+    const { data, error: dbError } = await db.from('surveys').insert({ title: v.title, slug: v.slug, intro: v.intro || null, fields: parsed, anonymous: v.anonymous, status: 'draft', created_by: me.id }).select('id').single();
+    if (dbError) error = dbError.code === '23505' ? 'That web address is already used by another survey.' : 'Could not create the survey.';
+    else { await audit(me.id, 'survey_created', 'survey', data.id); return Astro.redirect(withFlash(`/admin/surveys/${data.id}`, 'ok', 'Draft created. Preview it, then open it to members.'), 303); }
+  }
+}
+const [{ data: surveys }, { data: responses }] = await Promise.all([
+  db.from('surveys').select('id,slug,title,status,anonymous,created_at').order('created_at', { ascending: false }),
+  db.from('survey_responses').select('survey_id'),
+]);
+const counts = new Map<string, number>();
+for (const r of responses ?? []) counts.set(r.survey_id, (counts.get(r.survey_id) ?? 0) + 1);
+const badge: Record<string, string> = { open: 'badge badge-green', closed: 'badge badge-lock', draft: 'badge badge-amber' };
+---
+<Shell title="Surveys" area="admin">
+  <p class="eyebrow">Board tools</p>
+  <h1>Surveys</h1>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Survey</th><th>Status</th><th class="num">Responses</th><th>Created</th></tr></thead>
+    <tbody>{(surveys ?? []).map((s) => (
+      <tr><td><a href={`/admin/surveys/${s.id}`}><strong>{s.title}</strong></a>{s.anonymous && <span class="badge" style="margin-left:8px">Anonymous</span>}</td><td><span class={badge[s.status]}>{s.status}</span></td><td class="num">{counts.get(s.id) ?? 0}</td><td>{fmtDate(s.created_at)}</td></tr>
+    ))}</tbody>
+  </table></div>
+
+  <details class="card mt-3" open={!!error}>
+    <summary><strong>Create a new survey</strong></summary>
+    <form method="post" class="form mt-2">
+      {error && <div class="flash flash-error" role="alert">{error}</div>}
+      <div class="grid grid-2">
+        <div class="field"><label for="title">Title</label><input id="title" name="title" type="text" required maxlength="160" value={v.title} /></div>
+        <div class="field"><label for="slug">Web address</label><input id="slug" name="slug" type="text" required maxlength="60" pattern="[a-z0-9-]{3,60}" placeholder="pool-hours-2027" value={v.slug} /><p class="help">/members/surveys/<em>your-address</em></p></div>
+      </div>
+      <div class="field"><label for="intro">Introduction</label><textarea id="intro" name="intro" rows="2" maxlength="2000">{v.intro}</textarea></div>
+      <div class="field"><label for="fields">Questions</label>
+        <textarea id="fields" name="fields" rows="16" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;font-size:.85rem" required>{v.fields}</textarea>
+        <p class="help">A list of questions. Types: <code>section</code>, <code>text</code>, <code>textarea</code>, <code>number</code>, <code>date</code>, <code>radio</code>, <code>select</code>, <code>checkboxes</code>, <code>boolean</code>, <code>scale</code>. Everything is validated before saving.</p></div>
+      <label class="choice"><input type="checkbox" name="anonymous" checked={v.anonymous} /><span>Anonymous: store answers without the member's name or lot</span></label>
+      <div><button class="btn btn-primary" type="submit">Save as draft</button></div>
+    </form>
+  </details>
+</Shell>

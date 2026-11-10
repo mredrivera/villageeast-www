@@ -1,0 +1,36 @@
+---
+import Base from '~/layouts/Base.astro';
+import Icon from '~/components/Icon.astro';
+import { FORMS } from '~/lib/forms/definitions';
+import { isMember } from '~/lib/auth';
+const member = isMember(Astro.locals.profile);
+const { data: paper } = await Astro.locals.supabase.from('documents').select('id,title').eq('category', 'forms').eq('visibility', 'public');
+const paperFor = (title?: string) => (paper ?? []).find((d) => d.title === title);
+---
+<Base title="Forms & requests" description="Submit Village East architectural review requests, boat storage applications and other forms online.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Skip the printer</p>
+    <h1>Forms &amp; requests</h1>
+    <p class="lead">Owners can submit requests online, attach drawings and photos, and follow each request from submitted to decided. Paper versions remain available.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap">
+    <div class="grid grid-2">
+      {FORMS.map((f) => { const doc = paperFor(f.paperFormTitle); return (
+        <article class="card">
+          <div class="card-icon"><Icon name={f.icon} size={22} /></div>
+          <h2 style="font-size:1.35rem">{f.title}</h2>
+          <p class="muted">{f.blurb}</p>
+          <dl class="dl small mb-2"><dt>Reviewed by</dt><dd>{f.reviewedBy}</dd><dt>Timing</dt><dd>{f.turnaround}</dd></dl>
+          <div class="row">
+            <a class="btn btn-primary btn-sm" href={`/members/requests/new/${f.type}`}>{member ? 'Start online' : <><Icon name="lock" size={14} /> Sign in to start</>}</a>
+            {doc && <a class="btn btn-ghost btn-sm" href={`/documents/${doc.id}`}><Icon name="download" size={14} /> Paper form</a>}
+          </div>
+        </article>
+      ); })}
+    </div>
+    <div class="grid grid-2 mt-3">
+      <a class="card card-link" href="/members/surveys"><div class="card-icon"><Icon name="check" size={22} /></div><h3>Community surveys</h3><p class="small muted mb-0">Answer the Social Club survey online. Results are tallied automatically for the organizers.</p></a>
+      <a class="card card-link" href="/members/votes"><div class="card-icon"><Icon name="ballot" size={22} /></div><h3>Ballots &amp; voting</h3><p class="small muted mb-0">Cast your lot's vote securely from any device. Secret ballot, one vote per lot.</p></a>
+    </div>
+  </div></section>
+</Base>

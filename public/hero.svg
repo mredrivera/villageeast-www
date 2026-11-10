@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16485a"/><stop offset=".45" stop-color="#5e97a0"/><stop offset=".72" stop-color="#f1c48c"/><stop offset="1" stop-color="#f7dcb2"/></linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb4bd"/><stop offset=".35" stop-color="#2f7c8c"/><stop offset="1" stop-color="#0b3340"/></linearGradient>
+    <radialGradient id="sun" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff3d6"/><stop offset=".4" stop-color="#fbd79a" stop-opacity=".9"/><stop offset="1" stop-color="#f7c987" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <circle cx="1160" cy="470" r="230" fill="url(#sun)"/>
+  <circle cx="1160" cy="470" r="46" fill="#fff4dc"/>
+  <path d="M0 520 C140 470 260 430 400 455 C520 380 640 350 760 420 C860 400 930 440 1010 470 C1140 440 1300 470 1600 500 L1600 600 L0 600Z" fill="#5d8f98" opacity=".75"/>
+  <path d="M0 560 C120 520 240 500 380 520 C470 470 560 455 650 500 C760 480 900 520 1040 530 C1220 510 1400 525 1600 545 L1600 610 L0 610Z" fill="#33707c"/>
+  <path d="M0 590 C200 560 330 566 480 580 C640 560 760 574 900 584 C1100 570 1340 574 1600 590 L1600 620 L0 620Z" fill="#1c5562"/>
+  <rect y="600" width="1600" height="300" fill="url(#water)"/>
+  <g fill="#fff3d6" opacity=".5">
+    <rect x="1090" y="622" width="140" height="5" rx="2.5"/><rect x="1060" y="646" width="200" height="6" rx="3"/><rect x="1030" y="676" width="260" height="7" rx="3.500"/>
+    <rect x="1075" y="712" width="170" height="8" rx="4"/><rect x="1000" y="756" width="320" height="9" rx="4.500"/><rect x="1090" y="808" width="140" height="10" rx="5"/>
+  </g>
+  <g fill="#0b3340">
+    <path d="M0 900 L0 640 C60 628 90 650 150 646 C200 610 250 640 300 660 C340 690 420 700 470 760 C500 820 520 860 540 900Z"/>
+    <path d="M118 650 l14 -70 l14 70z M160 644 l18 -96 l18 96z M210 650 l13 -62 l13 62z M70 652 l12 -54 l12 54z"/>
+    <rect x="300" y="742" width="330" height="9"/><rect x="330" y="751" width="6" height="60"/><rect x="430" y="751" width="6" height="70"/><rect x="530" y="751" width="6" height="80"/><rect x="620" y="751" width="6" height="86"/>
+  </g>
+  <g transform="translate(820 668)" fill="#0b3340"><path d="M0 0 h110 l-14 16 h-82z"/><path d="M52 -3 v-64 l44 58z"/><path d="M48 -3 v-52 l-30 46z"/></g>
+</svg>

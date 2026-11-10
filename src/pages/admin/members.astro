@@ -1,0 +1,127 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { isAdmin } from '~/lib/auth';
+import { config } from '~/lib/env';
+import { fmtDate, withFlash } from '~/lib/format';
+import { sendMail } from '~/lib/mail';
+import { audit, createServiceClient } from '~/lib/supabase';
+
+const me = Astro.locals.profile!;
+if (!isAdmin(me)) return new Response('Not found', { status: 404 });
+const db = Astro.locals.supabase;
+const back = (kind: 'ok' | 'error', msg: string) => Astro.redirect(withFlash('/admin/members', kind, msg), 303);
+const ROLES = ['resident', 'board', 'admin'];
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+
+/** Creates the sign-in account. No password exists; the person signs in with emailed one-time codes. */
+async function createMember(email: string, fullName: string, lotId: string | null, role: string) {
+  const service = createServiceClient();
+  const inv = await service.from('member_invites').upsert({ email, full_name: fullName, lot_id: lotId, role });
+  if (inv.error) return inv.error.message;
+  const { error } = await service.auth.admin.createUser({ email, email_confirm: true });
+  if (error) { await service.from('member_invites').delete().eq('email', email); return /already/i.test(error.message) ? 'An account with that email already exists.' : error.message; }
+  const mail = await sendMail({ to: email, subject: 'Your Village East account is ready', heading: 'Welcome to the Village East member area', lines: ['Your owner account has been approved.', 'There is no password: enter your email address and we will send you a one-time sign-in code.'], action: { label: 'Sign in', url: `${config.siteUrl}/auth/sign-in` } });
+  return mail.sent ? null : mail.reason === 'not_allowlisted' ? 'NOTE:Account created. No welcome email was sent because this address is not on the demo MAIL_ALLOWLIST.' : 'NOTE:Account created. The welcome email could not be sent (email is not configured).';
+}
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const id = String(form.get('id') ?? '');
+  if (action === 'approve' || action === 'deny') {
+    const { data: req } = await db.from('access_requests').select('*').eq('id', id).eq('status', 'pending').maybeSingle();
+    if (!req) return back('error', 'That request was already handled.');
+    let note: string | null = null;
+    if (action === 'approve') {
+      note = await createMember(req.email, req.full_name, req.lot_id, 'resident');
+      if (note && !note.startsWith('NOTE:')) return back('error', note);
+    }
+    await db.from('access_requests').update({ status: action === 'approve' ? 'approved' : 'denied', decided_by: me.id, decided_at: new Date().toISOString() }).eq('id', id);
+    await audit(me.id, `access_${action}`, 'access_request', id, { email: req.email });
+    return back('ok', note ? note.slice(5) : action === 'approve' ? `${req.full_name} can now sign in.` : 'Request denied.');
+  }
+  if (action === 'invite') {
+    const email = String(form.get('email') ?? '').trim().toLowerCase();
+    const fullName = String(form.get('full_name') ?? '').trim().slice(0, 120);
+    const lotId = String(form.get('lot_id') ?? '') || null;
+    const role = String(form.get('role') ?? 'resident');
+    if (!EMAIL_RE.test(email) || fullName.length < 2 || !ROLES.includes(role)) return back('error', 'Enter a name, a valid email and a role.');
+    const note = await createMember(email, fullName, lotId, role);
+    if (note && !note.startsWith('NOTE:')) return back('error', note);
+    await audit(me.id, 'member_created', 'profile', null, { email, role });
+    return back('ok', note ? note.slice(5) : `${fullName} has been added and emailed.`);
+  }
+  if (action === 'update' && /^[0-9a-f-]{36}$/.test(id)) {
+    const role = String(form.get('role') ?? '');
+    const status = String(form.get('status') ?? '');
+    const lotId = String(form.get('lot_id') ?? '') || null;
+    if (!ROLES.includes(role) || !['pending', 'approved', 'suspended'].includes(status)) return back('error', 'Invalid role or status.');
+    if (id === me.id && (role !== 'admin' || status !== 'approved')) return back('error', 'You cannot remove your own administrator access.');
+    const { error } = await db.from('profiles').update({ role, status, lot_id: lotId }).eq('id', id);
+    if (error) return back('error', 'Could not update that member.');
+    if (status === 'suspended') await createServiceClient().auth.admin.signOut(id).catch(() => {}); // best effort: end live sessions
+    await audit(me.id, 'member_updated', 'profile', id, { role, status });
+    return back('ok', 'Member updated.');
+  }
+  return back('error', 'Unknown action.');
+}
+
+const [{ data: requests }, { data: members }, { data: lots }] = await Promise.all([
+  db.from('access_requests').select('id,full_name,email,relationship,note,created_at,lot_id,lots(address,label,section)').eq('status', 'pending').order('created_at'),
+  db.from('profiles').select('id,email,full_name,role,status,lot_id,created_at').order('full_name'),
+  db.from('lots').select('id,label,section,address').eq('kind', 'lot'),
+]);
+const lotOptions = (lots ?? []).map((l) => ({ id: l.id as string, text: l.address ? `${l.address} (S${l.section} ${l.label})` : `Section ${l.section} ${l.label}` })).sort((a, b) => a.text.replace(/^\d+\s/, '').localeCompare(b.text.replace(/^\d+\s/, ''), 'en', { numeric: true }) || a.text.localeCompare(b.text, 'en', { numeric: true }));
+---
+<Shell title="Members" area="admin">
+  <p class="eyebrow">Administrators only</p>
+  <h1>Members</h1>
+
+  <h2>Access requests</h2>
+  {(requests ?? []).length === 0 ? <p class="empty">No one is waiting for approval.</p> : (
+    <div class="stack">{(requests as any[]).map((r) => (
+      <article class="card">
+        <div class="spread">
+          <div><strong>{r.full_name}</strong> &middot; {r.email}<div class="small muted">{r.relationship} of {r.lots ? (r.lots.address ?? `Section ${r.lots.section} ${r.lots.label}`) : 'unknown lot'} &middot; requested {fmtDate(r.created_at)}</div>{r.note && <p class="small mb-0 mt-1 pre-line">{r.note}</p>}</div>
+          <div class="row">
+            <form method="post" class="inline-form"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="action" value="approve" /><button class="btn btn-primary btn-sm" type="submit">Approve</button></form>
+            <form method="post" class="inline-form"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="action" value="deny" /><button class="btn btn-danger btn-sm" type="submit">Deny</button></form>
+          </div>
+        </div>
+        <p class="small muted mb-0 mt-1">Tip: check the name against the owner of record on the <a href={`/map?lot=${r.lot_id}`}>map</a> before approving.</p>
+      </article>
+    ))}</div>
+  )}
+
+  <h2 class="mt-4">Add a member</h2>
+  <form method="post" class="card form">
+    <input type="hidden" name="action" value="invite" />
+    <div class="grid grid-2">
+      <div class="field"><label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" required maxlength="120" /></div>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required maxlength="254" /></div>
+      <div class="field"><label for="lot_id">Property</label><select id="lot_id" name="lot_id"><option value="">No lot (cannot vote)</option>{lotOptions.map((l) => <option value={l.id}>{l.text}</option>)}</select></div>
+      <div class="field"><label for="role">Role</label><select id="role" name="role"><option value="resident">Owner / resident</option><option value="board">Board member (reviews requests, runs surveys and ballots)</option><option value="admin">Administrator (manages members and documents)</option></select></div>
+    </div>
+    <div><button class="btn btn-primary" type="submit">Create account</button></div>
+    <p class="small muted mb-0">Demo safety: emails are only delivered to addresses on the allowlist ({config.mailAllowlist.join(', ') || 'none'}).</p>
+  </form>
+
+  <h2 class="mt-4">All members ({(members ?? []).length})</h2>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Name</th><th>Property</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>{(members ?? []).map((m) => (
+      <tr>
+        <td><strong>{m.full_name || '—'}</strong><div class="small muted">{m.email}</div></td>
+        <td colspan="4">
+          <form method="post" class="row">
+            <input type="hidden" name="action" value="update" /><input type="hidden" name="id" value={m.id} />
+            <select name="lot_id" aria-label="Property" style="max-width:260px"><option value="">No lot</option>{lotOptions.map((l) => <option value={l.id} selected={l.id === m.lot_id}>{l.text}</option>)}</select>
+            <select name="role" aria-label="Role" style="max-width:150px">{ROLES.map((r) => <option value={r} selected={r === m.role}>{r}</option>)}</select>
+            <select name="status" aria-label="Status" style="max-width:150px">{['pending', 'approved', 'suspended'].map((s) => <option value={s} selected={s === m.status}>{s}</option>)}</select>
+            <button class="btn btn-ghost btn-sm" type="submit">Save</button>
+          </form>
+        </td>
+      </tr>
+    ))}</tbody>
+  </table></div>
+</Shell>

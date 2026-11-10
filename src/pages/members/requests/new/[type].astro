@@ -1,0 +1,69 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import FormFields from '~/components/FormFields.astro';
+import Icon from '~/components/Icon.astro';
+import { getForm } from '~/lib/forms/definitions';
+import { displayAnswer, isInput, validateForm, type Answers } from '~/lib/forms/schema';
+import { withFlash } from '~/lib/format';
+import { notifyAdmin, sendMail } from '~/lib/mail';
+import { config } from '~/lib/env';
+import { createServiceClient } from '~/lib/supabase';
+
+const def = getForm(Astro.params.type ?? '');
+if (!def) return new Response('Not found', { status: 404 });
+const db = Astro.locals.supabase;
+const profile = Astro.locals.profile!;
+const { data: lot } = profile.lot_id ? await db.from('lots').select('label,section,address').eq('id', profile.lot_id).maybeSingle() : { data: null };
+
+let values: Answers = { signature: null, phone: profile.phone };
+let errors: Record<string, string> = {};
+let error = '';
+if (Astro.request.method === 'POST') {
+  const result = await validateForm(def.fields, await Astro.request.formData());
+  values = result.answers; errors = result.errors;
+  if (!result.ok) error = 'Please fix the highlighted fields. (Attachments need to be selected again.)';
+  else {
+    const summaryField = def.fields.filter(isInput).find((f) => f.name === def.summaryField);
+    const summary = summaryField ? displayAnswer(summaryField, result.answers[def.summaryField]).slice(0, 140) : def.title;
+    // Inserted with the member's own credentials: RLS guarantees user_id and lot_id are really theirs.
+    const { data: row, error: dbError } = await db.from('form_submissions')
+      .insert({ reference: def.prefix, form_type: def.type, user_id: profile.id, lot_id: profile.lot_id, summary, data: result.answers })
+      .select('id,reference').single();
+    if (dbError || !row) { console.error('submission', dbError?.message); error = 'Your request could not be saved. Please try again.'; }
+    else {
+      const service = createServiceClient();
+      const failed: string[] = [];
+      for (const file of Object.values(result.files).flat()) {
+        const ext = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type] ?? 'bin';
+        const path = `${row.id}/${crypto.randomUUID()}.${ext}`; // server-chosen name: the uploaded filename is never used as a path
+        const up = await service.storage.from('submissions').upload(path, await file.arrayBuffer(), { contentType: file.type });
+        const safeName = file.name.replace(/[^\w.\- ()]/g, '_').slice(-120) || `attachment.${ext}`;
+        const rec = up.error ? up : await db.from('submission_files').insert({ submission_id: row.id, storage_path: path, file_name: safeName, mime_type: file.type, size_bytes: file.size });
+        if (rec.error) { console.error('attachment', rec.error.message); failed.push(file.name); }
+      }
+      await db.from('submission_events').insert({ submission_id: row.id, actor: profile.id, kind: 'submitted', status: 'submitted' });
+      const where = lot ? `${lot.address ?? lot.label} (Section ${lot.section}, ${lot.label})` : 'no lot on file';
+      await Promise.all([
+        notifyAdmin(`${row.reference}: new ${def.title.toLowerCase()}`, `New ${def.title.toLowerCase()}`, [`${profile.full_name || profile.email} submitted ${row.reference} for ${where}.`, `Summary: ${summary}`], `/members/requests/${row.id}`),
+        sendMail({ to: profile.email, subject: `We received your request ${row.reference}`, heading: 'Request received', lines: [`Thank you. Your ${def.title.toLowerCase()} (${row.reference}) has been sent to the ${def.reviewedBy}.`, def.turnaround + '.'], action: { label: 'Track your request', url: `${config.siteUrl}/members/requests/${row.id}` } }),
+      ]);
+      return Astro.redirect(withFlash(`/members/requests/${row.id}`, failed.length ? 'error' : 'ok', failed.length ? `Request ${row.reference} was submitted, but these attachments failed to upload: ${failed.join(', ')}` : `Request ${row.reference} submitted.`), 303);
+    }
+  }
+}
+---
+<Shell title={def.title} area="members">
+  <p class="eyebrow"><a href="/members/requests">Requests</a></p>
+  <h1>{def.title}</h1>
+  <div class="prose">{def.intro.map((p) => <p>{p}</p>)}</div>
+  <form method="post" enctype="multipart/form-data" class="card form mt-3 narrow">
+    {error && <div class="flash flash-error" role="alert">{error}</div>}
+    <div class="panel">
+      <div class="row"><Icon name="user" /><strong>Submitting as</strong></div>
+      <dl class="dl small mt-1 mb-0"><dt>Name</dt><dd>{profile.full_name || '—'}</dd><dt>Email</dt><dd>{profile.email}</dd><dt>Property</dt><dd>{lot ? `${lot.address ?? lot.label} (Section ${lot.section}, ${lot.label})` : 'No lot linked to your account'}</dd></dl>
+    </div>
+    <FormFields fields={def.fields} values={values} errors={errors} />
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Submit request</button><a href="/members/requests">Cancel</a></div>
+    <p class="small muted mb-0">Reviewed by the {def.reviewedBy}. {def.turnaround}.</p>
+  </form>
+</Shell>

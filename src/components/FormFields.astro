@@ -1,0 +1,88 @@
+---
+import type { Field, Answers } from '~/lib/forms/schema';
+interface Props { fields: Field[]; values?: Answers; errors?: Record<string, string> }
+const { fields, values = {}, errors = {} } = Astro.props;
+const val = (name: string) => { const v = values[name]; return v === null || v === undefined || Array.isArray(v) ? '' : String(v); };
+const has = (name: string, option: string) => { const v = values[name]; return Array.isArray(v) ? v.includes(option) : v === option; };
+---
+{fields.map((f) => {
+  if (f.type === 'section') {
+    return (
+      <div class="form-section">
+        <h3>{f.label}</h3>
+        {f.help && <p class="help">{f.help}</p>}
+      </div>
+    );
+  }
+  const id = `f-${f.name}`;
+  const err = errors[f.name];
+  const describedBy = [f.help ? `${id}-help` : null, err ? `${id}-err` : null].filter(Boolean).join(' ') || undefined;
+  const req = f.required ? <span class="req" aria-hidden="true">*</span> : null;
+  const tail = (
+    <>
+      {f.help && <p class="help" id={`${id}-help`}>{f.help}</p>}
+      {err && <p class="error-text" id={`${id}-err`}>{err}</p>}
+    </>
+  );
+  if (f.type === 'radio' || f.type === 'checkboxes') {
+    return (
+      <fieldset class="field" aria-describedby={describedBy}>
+        <legend>{f.label}{req}</legend>
+        <div class:list={['choices', { 'choices-cols': f.options.length > 5 }]}>
+          {f.options.map((o) => (
+            <label class="choice">
+              <input type={f.type === 'radio' ? 'radio' : 'checkbox'} name={f.name} value={o.value} checked={has(f.name, o.value)} required={f.type === 'radio' && f.required} />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+        {tail}
+      </fieldset>
+    );
+  }
+  if (f.type === 'scale') {
+    const steps = Array.from({ length: f.max - f.min + 1 }, (_, i) => f.min + i);
+    return (
+      <fieldset class="field" aria-describedby={describedBy}>
+        <legend>{f.label}{req}</legend>
+        <div class="scale">
+          {f.minLabel && <span class="small muted">{f.minLabel}</span>}
+          {steps.map((n) => (
+            <label><input type="radio" name={f.name} value={n} checked={values[f.name] === n} required={f.required} /><span>{n}</span></label>
+          ))}
+          {f.maxLabel && <span class="small muted">{f.maxLabel}</span>}
+        </div>
+        {tail}
+      </fieldset>
+    );
+  }
+  if (f.type === 'boolean') {
+    return (
+      <div class="field">
+        <label class="choice">
+          <input type="checkbox" name={f.name} checked={values[f.name] === true} required={f.required} aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined} />
+          <span>{f.label}{req}</span>
+        </label>
+        {tail}
+      </div>
+    );
+  }
+  return (
+    <div class="field">
+      <label for={id}>{f.label}{req}</label>
+      {f.type === 'textarea' && <textarea id={id} name={f.name} rows={f.rows ?? 4} maxlength={f.maxLength ?? 4000} placeholder={f.placeholder} required={f.required} aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined}>{val(f.name)}</textarea>}
+      {f.type === 'select' && (
+        <select id={id} name={f.name} required={f.required} aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined}>
+          <option value="">Choose…</option>
+          {f.options.map((o) => <option value={o.value} selected={has(f.name, o.value)}>{o.label}</option>)}
+        </select>
+      )}
+      {f.type === 'number' && <input id={id} type="number" name={f.name} min={f.min} max={f.max} step={f.step ?? 1} value={val(f.name)} required={f.required} inputmode="decimal" aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined} />}
+      {f.type === 'files' && <input id={id} type="file" name={f.name} accept={f.accept.join(',')} multiple={f.maxFiles > 1} required={f.required} aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined} />}
+      {(f.type === 'text' || f.type === 'email' || f.type === 'tel' || f.type === 'date') && (
+        <input id={id} type={f.type} name={f.name} value={val(f.name)} maxlength={f.type === 'date' ? undefined : f.maxLength ?? 200} placeholder={f.placeholder} autocomplete={f.autocomplete} required={f.required} aria-describedby={describedBy} aria-invalid={err ? 'true' : undefined} />
+      )}
+      {tail}
+    </div>
+  );
+})}

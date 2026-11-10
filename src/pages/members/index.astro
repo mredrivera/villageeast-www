@@ -1,0 +1,81 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { STATUS_LABEL } from '~/lib/forms/definitions';
+import { dateParts, fmtDate, fmtTime } from '~/lib/format';
+
+const db = Astro.locals.supabase;
+const profile = Astro.locals.profile!;
+const nowIso = new Date().toISOString();
+const [lot, ballots, receipts, surveys, surveyReceipts, requests, events, minutes, newsletter] = await Promise.all([
+  profile.lot_id ? db.from('lots').select('label,section,address').eq('id', profile.lot_id).maybeSingle() : Promise.resolve({ data: null }),
+  db.from('ballots').select('id,title,closes_at').eq('status', 'published').lte('opens_at', nowIso).gt('closes_at', nowIso).order('closes_at'),
+  db.from('ballot_receipts').select('ballot_id'),
+  db.from('surveys').select('id,slug,title').eq('status', 'open'),
+  db.from('survey_receipts').select('survey_id'),
+  db.from('form_submissions').select('id,reference,summary,status,created_at').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(3),
+  db.from('events').select('id,title,starts_at,location').gte('starts_at', nowIso).order('starts_at').limit(3),
+  db.from('documents').select('id,title,doc_date').eq('category', 'minutes').eq('is_archived', false).order('doc_date', { ascending: false }).limit(3),
+  db.from('documents').select('id,title,doc_date').eq('category', 'newsletter').order('doc_date', { ascending: false }).limit(1),
+]);
+const voted = new Set((receipts.data ?? []).map((r) => r.ballot_id));
+const answered = new Set((surveyReceipts.data ?? []).map((r) => r.survey_id));
+const openBallots = (ballots.data ?? []).filter((b) => !voted.has(b.id));
+const openSurveys = (surveys.data ?? []).filter((s) => !answered.has(s.id));
+const firstName = profile.full_name.split(' ')[0] || 'neighbor';
+const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(new Date()));
+const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+---
+<Shell title="Member area" area="members">
+  <p class="eyebrow">Member area</p>
+  <h1>{greeting}, {firstName}</h1>
+  <p class="lead">{lot.data ? <>Signed in for <strong>{lot.data.address ?? lot.data.label}</strong> (Section {lot.data.section}, {lot.data.label}).</> : 'Your account is not linked to a lot yet. Contact an administrator so you can vote.'}</p>
+
+  {(openBallots.length > 0 || openSurveys.length > 0) && (
+    <div class="stack mt-3">
+      {openBallots.map((b) => (
+        <a class="card card-link" href={`/members/votes/${b.id}`} style="border-left:5px solid var(--sunset-500)">
+          <div class="spread"><div><span class="badge badge-amber">Vote open</span><h2 class="mt-1 mb-0" style="font-size:1.25rem">{b.title}</h2><p class="small muted mb-0">Closes {fmtDate(b.closes_at)}. Your lot has not voted yet.</p></div><span class="btn btn-accent btn-sm">Cast your vote <Icon name="arrow" size={14} /></span></div>
+        </a>
+      ))}
+      {openSurveys.map((s) => (
+        <a class="card card-link" href={`/members/surveys/${s.slug}`} style="border-left:5px solid var(--lake-500)">
+          <div class="spread"><div><span class="badge">Survey</span><h2 class="mt-1 mb-0" style="font-size:1.25rem">{s.title}</h2><p class="small muted mb-0">Takes about three minutes.</p></div><span class="btn btn-primary btn-sm">Answer <Icon name="arrow" size={14} /></span></div>
+        </a>
+      ))}
+    </div>
+  )}
+
+  <div class="grid grid-3 mt-3">
+    <a class="card card-link" href="/members/financials"><div class="card-icon"><Icon name="chart" size={22} /></div><h3>Financials</h3><p class="small muted mb-0">Interactive reports: where dues go, budgets, reserves.</p></a>
+    <a class="card card-link" href="/members/requests"><div class="card-icon"><Icon name="inbox" size={22} /></div><h3>Requests</h3><p class="small muted mb-0">Architectural reviews, boat storage and more.</p></a>
+    <a class="card card-link" href="/map"><div class="card-icon"><Icon name="map" size={22} /></div><h3>Community map</h3><p class="small muted mb-0">Now showing owners of record and property facts.</p></a>
+  </div>
+
+  <div class="grid grid-2 mt-3">
+    <section class="card">
+      <div class="spread"><h2 class="mb-0" style="font-size:1.25rem">Coming up</h2><a class="small" href="/meetings">Calendar</a></div>
+      {(events.data ?? []).length === 0 ? <p class="muted mt-2 mb-0">Nothing scheduled.</p> : (
+        <ul class="list">{(events.data ?? []).map((e) => { const d = dateParts(e.starts_at); return (
+          <li class="event-row"><div class="date-chip" aria-hidden="true"><b>{d.month}</b><span>{d.day}</span></div><div><strong>{e.title}</strong><div class="small muted">{d.weekday} at {fmtTime(e.starts_at)}{e.location && <> &middot; {e.location}</>}</div></div></li>
+        ); })}</ul>
+      )}
+    </section>
+    <section class="card">
+      <div class="spread"><h2 class="mb-0" style="font-size:1.25rem">Latest minutes</h2><a class="small" href="/members/minutes">All minutes</a></div>
+      <ul class="list">
+        {(minutes.data ?? []).map((m) => <li><a class="doc-title" href={`/documents/${m.id}`}>{m.title}</a><span class="doc-meta">{m.doc_date && fmtDate(m.doc_date)}</span></li>)}
+        {(newsletter.data ?? []).map((n) => <li><span class="badge badge-sand">Newsletter</span> <a class="doc-title" href={`/documents/${n.id}`}>{n.title}</a></li>)}
+      </ul>
+    </section>
+  </div>
+
+  {(requests.data ?? []).length > 0 && (
+    <section class="card mt-3">
+      <div class="spread"><h2 class="mb-0" style="font-size:1.25rem">Your recent requests</h2><a class="small" href="/members/requests">All requests</a></div>
+      <ul class="list">{(requests.data ?? []).map((r) => (
+        <li class="spread"><span><a class="doc-title" href={`/members/requests/${r.id}`}>{r.reference}: {r.summary}</a><span class="doc-meta">Submitted {fmtDate(r.created_at)}</span></span><span class="badge">{STATUS_LABEL[r.status] ?? r.status}</span></li>
+      ))}</ul>
+    </section>
+  )}
+</Shell>

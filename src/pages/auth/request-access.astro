@@ -1,0 +1,79 @@
+---
+import Base from '~/layouts/Base.astro';
+import Turnstile from '~/components/Turnstile.astro';
+import { notifyAdmin } from '~/lib/mail';
+import { rateLimitOk, verifyTurnstile } from '~/lib/security';
+import { createServiceClient } from '~/lib/supabase';
+
+const { data: lots } = await Astro.locals.supabase.from('lots').select('id,label,section,address').eq('kind', 'lot');
+const lotOptions = (lots ?? [])
+  .map((l) => ({ id: l.id as string, text: l.address ? `${l.address} (Section ${l.section}, ${l.label})` : `Section ${l.section}, ${l.label} (no street address)`, sort: (l.address ? '0' : '1') + (l.address ?? '').replace(/^\d+\s*/, '') + String(l.address ?? l.id).padStart(40, '0') }))
+  .sort((a, b) => a.sort.localeCompare(b.sort, 'en', { numeric: true }));
+
+let done = false;
+let error = '';
+const v = { full_name: '', email: '', lot_id: '', relationship: 'owner', note: '' };
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  v.full_name = String(form.get('full_name') ?? '').trim();
+  v.email = String(form.get('email') ?? '').trim().toLowerCase();
+  v.lot_id = String(form.get('lot_id') ?? '');
+  v.relationship = String(form.get('relationship') ?? 'owner');
+  v.note = String(form.get('note') ?? '').trim();
+  if (v.full_name.length < 2 || v.full_name.length > 120) error = 'Please enter your full name.';
+  else if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(v.email)) error = 'Enter a valid email address.';
+  else if (!lotOptions.some((l) => l.id === v.lot_id)) error = 'Choose your property from the list.';
+  else if (!['owner', 'household', 'renter'].includes(v.relationship)) error = 'Choose how you are connected to the property.';
+  else if (v.note.length > 1000) error = 'Please keep the note under 1,000 characters.';
+  else if (!(await rateLimitOk(Astro.request, 'access'))) error = 'Too many requests. Please try again in a minute.';
+  else if (!(await verifyTurnstile(Astro.request, form.get('cf-turnstile-response')))) error = 'We could not confirm you are human. Please try again.';
+  else {
+    const { error: dbError } = await createServiceClient().from('access_requests').insert({ full_name: v.full_name, email: v.email, lot_id: v.lot_id, relationship: v.relationship, note: v.note || null });
+    // 23505 = a pending request already exists for this email: treat as success, reveal nothing.
+    if (dbError && dbError.code !== '23505') { console.error('access request', dbError.message); error = 'Something went wrong. Please try again.'; }
+    else {
+      if (!dbError) await notifyAdmin('New owner access request', 'New owner access request', [`${v.full_name} asked for a member account for ${lotOptions.find((l) => l.id === v.lot_id)?.text}.`], '/admin/members');
+      done = true;
+    }
+  }
+}
+---
+<Base title="Request owner access" noindex>
+  <div class="wrap narrow section-tight">
+    <p class="eyebrow">Owners &amp; residents</p>
+    <h1>Request owner access</h1>
+    {done ? (
+      <div class="card">
+        <h2 class="mt-0">Request received</h2>
+        <p>Thank you. An administrator will check your details against the lot roster. Once approved, you can <a href="/auth/sign-in">sign in</a> with a one-time email code. No password to remember.</p>
+      </div>
+    ) : (
+      <>
+        <p class="lead">Financial reports, minutes, newsletters, voting and the neighbor directory are for Village East owners and residents. Tell us who you are and we will set up your account.</p>
+        {error && <div class="flash flash-error" role="alert">{error}</div>}
+        <form method="post" class="card form mt-3">
+          <div class="field"><label for="full_name">Full name<span class="req">*</span></label><input id="full_name" name="full_name" type="text" autocomplete="name" required maxlength="120" value={v.full_name} /></div>
+          <div class="field"><label for="email">Email address<span class="req">*</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254" value={v.email} /><p class="help">Used only to sign you in and for association notices.</p></div>
+          <div class="field">
+            <label for="lot_id">Your Village East property<span class="req">*</span></label>
+            <select id="lot_id" name="lot_id" required>
+              <option value="">Choose your address or lot…</option>
+              {lotOptions.map((l) => <option value={l.id} selected={l.id === v.lot_id}>{l.text}</option>)}
+            </select>
+          </div>
+          <fieldset class="field">
+            <legend>I am…</legend>
+            <div class="choices">
+              {[['owner', 'An owner of this property'], ['household', "A member of the owner's household"], ['renter', 'A long-term renter']].map(([value, label]) => (
+                <label class="choice"><input type="radio" name="relationship" value={value} checked={v.relationship === value} /><span>{label}</span></label>
+              ))}
+            </div>
+          </fieldset>
+          <div class="field"><label for="note">Anything we should know? (optional)</label><textarea id="note" name="note" rows="3" maxlength="1000">{v.note}</textarea></div>
+          <Turnstile />
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Send request</button><a href="/auth/sign-in">I already have an account</a></div>
+        </form>
+      </>
+    )}
+  </div>
+</Base>

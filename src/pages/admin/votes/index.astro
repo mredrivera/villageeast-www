@@ -1,0 +1,104 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { fmtDateTime, withFlash } from '~/lib/format';
+import { audit } from '~/lib/supabase';
+const db = Astro.locals.supabase;
+const me = Astro.locals.profile!;
+const back = (kind: 'ok' | 'error', msg: string) => Astro.redirect(withFlash('/admin/votes', kind, msg), 303);
+const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'option';
+/** Interprets a datetime-local value as US Eastern time. */
+function easternToIso(local: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null;
+  for (const offset of ['-04:00', '-05:00']) {
+    const d = new Date(`${local}:00${offset}`);
+    const shown = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/New_York', dateStyle: 'short', timeStyle: 'short' }).format(d).replace(' ', 'T');
+    if (shown === local) return d.toISOString();
+  }
+  return null;
+}
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const id = String(form.get('id') ?? '');
+  if (action === 'create') {
+    const title = String(form.get('title') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+    const opens = easternToIso(String(form.get('opens_at') ?? ''));
+    const closes = easternToIso(String(form.get('closes_at') ?? ''));
+    if (title.length < 3 || title.length > 160) return back('error', 'Give the ballot a title.');
+    if (!opens || !closes || closes <= opens) return back('error', 'Choose an opening time and a later closing time.');
+    const questions = [];
+    for (let i = 1; i <= 6; i++) {
+      const prompt = String(form.get(`q${i}_prompt`) ?? '').trim();
+      if (!prompt) continue;
+      const labels = String(form.get(`q${i}_options`) ?? '').split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 20);
+      if (labels.length < 2) return back('error', `Question ${i} needs at least two options (one per line).`);
+      const ids = new Set<string>();
+      const options = labels.map((label) => { let oid = slugify(label); while (ids.has(oid)) oid += '_'; ids.add(oid); return { id: oid, label: label.slice(0, 200) }; });
+      const max = Math.min(Math.max(1, Number(form.get(`q${i}_max`) ?? 1) || 1), options.length);
+      questions.push({ position: i, prompt: prompt.slice(0, 500), detail: String(form.get(`q${i}_detail`) ?? '').trim().slice(0, 2000) || null, max_choices: max, options });
+    }
+    if (questions.length === 0) return back('error', 'Add at least one question.');
+    const { data: ballot, error } = await db.from('ballots').insert({ title, description: description || null, opens_at: opens, closes_at: closes, status: 'draft', created_by: me.id }).select('id').single();
+    if (error || !ballot) return back('error', 'Could not create the ballot.');
+    const { error: qError } = await db.from('ballot_questions').insert(questions.map((q) => ({ ...q, ballot_id: ballot.id })));
+    if (qError) { await db.from('ballots').delete().eq('id', ballot.id); return back('error', 'Could not save the questions.'); }
+    await audit(me.id, 'ballot_created', 'ballot', ballot.id);
+    return back('ok', 'Draft ballot created. Review it, then publish.');
+  }
+  if (/^[0-9a-f-]{36}$/.test(id) && ['publish', 'cancel', 'delete'].includes(action)) {
+    if (action === 'delete') await db.from('ballots').delete().eq('id', id).eq('status', 'draft');
+    else await db.from('ballots').update({ status: action === 'publish' ? 'published' : 'cancelled' }).eq('id', id);
+    await audit(me.id, `ballot_${action}`, 'ballot', id);
+    return back('ok', action === 'publish' ? 'Ballot published. Members can vote during the voting window.' : 'Done.');
+  }
+  return back('error', 'Unknown action.');
+}
+const { data: ballots } = await db.from('ballots').select('id,title,opens_at,closes_at,status').order('created_at', { ascending: false });
+const now = Date.now();
+const label = (b: any) => b.status !== 'published' ? b.status : now < Date.parse(b.opens_at) ? 'scheduled' : now < Date.parse(b.closes_at) ? 'open' : 'closed';
+const badge: Record<string, string> = { open: 'badge badge-green', closed: 'badge badge-lock', draft: 'badge badge-amber', scheduled: 'badge badge-sand', cancelled: 'badge badge-red' };
+---
+<Shell title="Ballots" area="admin">
+  <p class="eyebrow">Board tools</p>
+  <h1>Ballots</h1>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Ballot</th><th>Window (Eastern)</th><th>Status</th><th></th></tr></thead>
+    <tbody>{(ballots ?? []).map((b) => { const s = label(b); return (
+      <tr><td><a href={`/members/votes/${b.id}`}><strong>{b.title}</strong></a></td><td class="small">{fmtDateTime(b.opens_at)}<br />to {fmtDateTime(b.closes_at)}</td><td><span class={badge[s]}>{s}</span></td>
+        <td><div class="row">
+          {b.status === 'draft' && <form method="post" class="inline-form"><input type="hidden" name="id" value={b.id} /><input type="hidden" name="action" value="publish" /><button class="btn btn-primary btn-sm" type="submit">Publish</button></form>}
+          {b.status === 'draft' && <form method="post" class="inline-form"><input type="hidden" name="id" value={b.id} /><input type="hidden" name="action" value="delete" /><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>}
+          {b.status === 'published' && s !== 'closed' && <form method="post" class="inline-form"><input type="hidden" name="id" value={b.id} /><input type="hidden" name="action" value="cancel" /><button class="btn btn-danger btn-sm" type="submit">Cancel</button></form>}
+          <a class="btn btn-ghost btn-sm" href={`/members/votes/${b.id}`}>{s === 'draft' ? 'Preview' : 'Tally'}</a>
+        </div></td></tr>
+    ); })}</tbody>
+  </table></div>
+  <div class="panel small mt-2"><strong>How voting works.</strong> One vote per lot. The database records which lots have voted in one table and the anonymous choices in another, with no link between them. Questions are locked once a ballot is published. Members see results only after voting closes.</div>
+
+  <details class="card mt-3">
+    <summary><strong>Create a new ballot</strong></summary>
+    <form method="post" class="form mt-2">
+      <input type="hidden" name="action" value="create" />
+      <div class="field"><label for="title">Title</label><input id="title" name="title" type="text" required maxlength="160" /></div>
+      <div class="field"><label for="description">Description shown to voters</label><textarea id="description" name="description" rows="3" maxlength="4000"></textarea></div>
+      <div class="grid grid-2">
+        <div class="field"><label for="opens_at">Voting opens (Eastern time)</label><input id="opens_at" name="opens_at" type="datetime-local" required /></div>
+        <div class="field"><label for="closes_at">Voting closes (Eastern time)</label><input id="closes_at" name="closes_at" type="datetime-local" required /></div>
+      </div>
+      {[1, 2, 3, 4].map((i) => (
+        <fieldset class="panel field">
+          <legend>Question {i}{i > 1 && ' (optional)'}</legend>
+          <div class="field"><label for={`q${i}_prompt`}>Question</label><input id={`q${i}_prompt`} name={`q${i}_prompt`} type="text" maxlength="500" required={i === 1} /></div>
+          <div class="field"><label for={`q${i}_detail`}>Explanation (optional)</label><textarea id={`q${i}_detail`} name={`q${i}_detail`} rows="2" maxlength="2000"></textarea></div>
+          <div class="grid grid-2">
+            <div class="field"><label for={`q${i}_options`}>Options, one per line</label><textarea id={`q${i}_options`} name={`q${i}_options`} rows="4" placeholder={'Yes\nNo'}></textarea></div>
+            <div class="field"><label for={`q${i}_max`}>How many may a voter choose?</label><input id={`q${i}_max`} name={`q${i}_max`} type="number" min="1" max="20" value="1" /><p class="help">Use more than 1 for elections, e.g. "vote for up to 4 candidates".</p></div>
+          </div>
+        </fieldset>
+      ))}
+      <div><button class="btn btn-primary" type="submit">Save as draft</button></div>
+    </form>
+  </details>
+</Shell>

@@ -1,0 +1,56 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { withFlash } from '~/lib/format';
+const db = Astro.locals.supabase;
+const profile = Astro.locals.profile!;
+let error = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const full_name = String(form.get('full_name') ?? '').trim();
+  const phone = String(form.get('phone') ?? '').trim();
+  if (full_name.length < 2 || full_name.length > 120) error = 'Please enter your name.';
+  else if (phone && !/^[0-9+()\-. x]{7,25}$/.test(phone)) error = 'Enter a valid phone number, or leave it blank.';
+  else {
+    const opt = form.get('directory_opt_in') === 'on';
+    // Only contact fields are sent; role, status and lot are locked by a database trigger as well.
+    const { error: dbError } = await db.from('profiles').update({
+      full_name, phone: phone || null, directory_opt_in: opt,
+      directory_show_email: opt && form.get('directory_show_email') === 'on',
+      directory_show_phone: opt && form.get('directory_show_phone') === 'on',
+    }).eq('id', profile.id);
+    if (dbError) { console.error('profile update', dbError.message); error = 'Could not save your changes. Please try again.'; }
+    else return Astro.redirect(withFlash('/members/profile', 'ok', 'Your profile has been saved.'), 303);
+  }
+}
+const { data: lot } = profile.lot_id ? await db.from('lots').select('label,section,address').eq('id', profile.lot_id).maybeSingle() : { data: null };
+const ROLE = { resident: 'Owner / resident', board: 'Board member', admin: 'Administrator' };
+---
+<Shell title="My profile" area="members">
+  <h1>My profile</h1>
+  {error && <div class="flash flash-error" role="alert">{error}</div>}
+  <div class="grid grid-2">
+    <form method="post" class="card form">
+      <h2 class="mb-0" style="font-size:1.3rem">Contact details</h2>
+      <div class="field"><label for="full_name">Name</label><input id="full_name" name="full_name" type="text" autocomplete="name" required maxlength="120" value={profile.full_name} /></div>
+      <div class="field"><label for="phone">Phone (optional)</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="25" value={profile.phone ?? ''} /></div>
+      <div class="form-section"><h3>Neighbor directory</h3><p class="help">You decide whether you appear, and what neighbors can see. Nothing is shared by default.</p></div>
+      <label class="choice"><input type="checkbox" name="directory_opt_in" checked={profile.directory_opt_in} /><span>List my name and street address in the neighbor directory</span></label>
+      <label class="choice"><input type="checkbox" name="directory_show_email" checked={profile.directory_show_email} /><span>Also show my email address</span></label>
+      <label class="choice"><input type="checkbox" name="directory_show_phone" checked={profile.directory_show_phone} /><span>Also show my phone number</span></label>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save changes</button></div>
+    </form>
+    <div class="stack">
+      <div class="card">
+        <h2 style="font-size:1.3rem">Account</h2>
+        <dl class="dl">
+          <dt>Sign-in email</dt><dd>{profile.email}</dd>
+          <dt>Property</dt><dd>{lot ? `${lot.address ?? lot.label} (Section ${lot.section}, ${lot.label})` : 'Not linked'}</dd>
+          <dt>Role</dt><dd>{ROLE[profile.role]}</dd>
+        </dl>
+        <p class="small muted">To change your email or property, <a href="/contact">contact an administrator</a>.</p>
+        <form method="post" action="/auth/sign-out"><button class="btn btn-ghost" type="submit">Sign out</button></form>
+      </div>
+      <div class="panel small"><strong>How sign-in works.</strong> There is no password to steal or forget: each time you sign in we email you a one-time code that expires after 10 minutes.</div>
+    </div>
+  </div>
+</Shell>

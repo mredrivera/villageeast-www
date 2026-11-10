@@ -1,0 +1,14 @@
+# Local development settings. Copy to .dev.vars (which is gitignored) and fill in.
+# For the local Supabase stack, run `npx supabase start` then `npx supabase status`
+# and copy the "Publishable key" and "Secret key" it prints.
+SITE_URL=http://localhost:4321
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_PUBLISHABLE_KEY=paste-local-publishable-key
+SUPABASE_SECRET_KEY=paste-local-secret-key
+# Cloudflare's always-pass Turnstile test keys (safe to commit; for local use only).
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+# Leave empty locally: emails are then logged instead of sent.
+RESEND_API_KEY=
+MAIL_ALLOWLIST=
+ADMIN_NOTIFY_EMAIL=

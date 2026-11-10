@@ -1,0 +1,42 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { fmtBytes, fmtDate } from '~/lib/format';
+
+const { data } = await Astro.locals.supabase.from('documents')
+  .select('id,title,category,doc_date,file_name,size_bytes,is_archived').in('category', ['minutes', 'agenda']).order('doc_date', { ascending: false });
+type Row = { id: string; title: string; category: string; doc_date: string | null; file_name: string; size_bytes: number; is_archived: boolean };
+// Group agenda + minutes of the same meeting date together, newest first.
+const meetings = new Map<string, Row[]>();
+for (const d of (data ?? []) as Row[]) { const k = d.doc_date ?? 'undated'; meetings.set(k, [...(meetings.get(k) ?? []), d]); }
+const byYear = new Map<string, [string, Row[]][]>();
+for (const [date, docs] of meetings) { const y = date.slice(0, 4); byYear.set(y, [...(byYear.get(y) ?? []), [date, docs]]); }
+const kind = (docs: Row[]) => (docs.some((d) => /annual/i.test(d.title)) ? 'Annual membership meeting' : 'Board meeting');
+---
+<Shell title="Minutes & agendas" area="members">
+  <p class="eyebrow">Owners only</p>
+  <h1>Minutes &amp; agendas</h1>
+  <p class="lead">Every board and membership meeting in one timeline, with its agenda and minutes side by side.</p>
+  {[...byYear].map(([y, list]) => (
+    <section class="mt-3">
+      <h2>{y}</h2>
+      <div class="card"><ul class="list">
+        {list.map(([date, docs]) => (
+          <li>
+            <div class="spread">
+              <div><strong>{date === 'undated' ? 'Undated' : fmtDate(date, { dateStyle: 'full' })}</strong><div class="small muted">{kind(docs)}</div></div>
+              <div class="row">
+                {docs.sort((a, b) => a.category.localeCompare(b.category) || Number(a.is_archived) - Number(b.is_archived)).map((d) => (
+                  <a class:list={['btn btn-sm', d.category === 'minutes' && !d.is_archived ? 'btn-primary' : 'btn-ghost']} href={`/documents/${d.id}`} title={`${d.title} (${fmtBytes(d.size_bytes)})`}>
+                    <Icon name={d.category === 'minutes' ? 'file' : 'calendar'} size={14} />
+                    {d.category === 'agenda' ? 'Agenda' : /annual/i.test(d.title) ? 'Annual minutes' : 'Minutes'}{/draft|unapproved/i.test(d.title) && ' (draft)'}{d.is_archived && ' (superseded)'}{/post-annual/i.test(d.title) && ' (board)'}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul></div>
+    </section>
+  ))}
+</Shell>

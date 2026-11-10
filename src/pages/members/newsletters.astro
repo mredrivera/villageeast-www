@@ -1,0 +1,29 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { fmtBytes, fmtDate } from '~/lib/format';
+const { data } = await Astro.locals.supabase.from('documents').select('id,title,doc_date,size_bytes').eq('category', 'newsletter').order('doc_date', { ascending: false });
+const all = data ?? [];
+const [latest, ...rest] = all;
+---
+<Shell title="Newsletters" area="members">
+  <p class="eyebrow">Owners only</p>
+  <h1>Newsletters</h1>
+  <p class="lead">The Village East Voice and president's letters, back to 2013.</p>
+  {latest && (
+    <a class="card card-link mt-3" href={`/documents/${latest.id}`} style="background:var(--lake-900);color:#dcebee;border-color:var(--lake-900)">
+      <span class="badge badge-amber">Latest issue</span>
+      <h2 class="mt-1" style="color:#fff">{latest.title}</h2>
+      <p class="mb-0">{latest.doc_date && fmtDate(latest.doc_date, { month: 'long', year: 'numeric' })} &middot; PDF, {fmtBytes(latest.size_bytes)} &nbsp; <Icon name="arrow" size={16} /></p>
+    </a>
+  )}
+  <div class="grid grid-3 mt-3">
+    {rest.map((n) => (
+      <a class="card card-link" href={`/documents/${n.id}`}>
+        <div class="card-icon"><Icon name="news" size={22} /></div>
+        <h3>{n.title}</h3>
+        <p class="small muted mb-0">{n.doc_date && fmtDate(n.doc_date, { month: 'long', year: 'numeric' })} &middot; {fmtBytes(n.size_bytes)}</p>
+      </a>
+    ))}
+  </div>
+</Shell>

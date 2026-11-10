@@ -1,0 +1,68 @@
+---
+import Base from '~/layouts/Base.astro';
+import Turnstile from '~/components/Turnstile.astro';
+import Icon from '~/components/Icon.astro';
+import { site } from '~/data/site';
+import { notifyAdmin } from '~/lib/mail';
+import { rateLimitOk, verifyTurnstile } from '~/lib/security';
+import { createServiceClient } from '~/lib/supabase';
+
+const TOPICS: Record<string, string> = { general: 'General question', dues: 'Dues or billing', realtor: 'Real estate / status letter', rules: 'Covenants or rules', website: 'Website feedback' };
+const v = { name: Astro.locals.profile?.full_name ?? '', email: Astro.locals.user?.email ?? '', topic: Astro.url.searchParams.get('topic') ?? 'general', message: '' };
+if (!(v.topic in TOPICS)) v.topic = 'general';
+let done = false;
+let error = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  v.name = String(form.get('name') ?? '').trim();
+  v.email = String(form.get('email') ?? '').trim().toLowerCase();
+  v.topic = String(form.get('topic') ?? 'general');
+  v.message = String(form.get('message') ?? '').trim();
+  const honeypot = String(form.get('company') ?? '');
+  if (v.name.length < 2 || v.name.length > 120) error = 'Please enter your name.';
+  else if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(v.email)) error = 'Enter a valid email address so we can reply.';
+  else if (!(v.topic in TOPICS)) error = 'Choose a topic.';
+  else if (v.message.length < 5 || v.message.length > 5000) error = 'Please enter a message (up to 5,000 characters).';
+  else if (!(await rateLimitOk(Astro.request, 'contact'))) error = 'Too many messages. Please try again in a minute.';
+  else if (!(await verifyTurnstile(Astro.request, form.get('cf-turnstile-response')))) error = 'We could not confirm you are human. Please try again.';
+  else if (honeypot) done = true; // bot filled the hidden field: pretend success, store nothing
+  else {
+    const { error: dbError } = await createServiceClient().from('contact_messages').insert({ name: v.name, email: v.email, topic: v.topic, message: v.message });
+    if (dbError) { console.error('contact', dbError.message); error = 'Something went wrong. Please try again.'; }
+    else {
+      await notifyAdmin(`Website message: ${TOPICS[v.topic]}`, 'New message from the website', [`From: ${v.name} <${v.email}>`, `Topic: ${TOPICS[v.topic]}`, v.message], '/admin/messages');
+      done = true;
+    }
+  }
+}
+---
+<Base title="Contact" description="Contact the Village East Property Owners Association board.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Get in touch</p>
+    <h1>Contact the board</h1>
+    <p class="lead">Questions about dues, the rules, a property sale or the community? Send a message and a board member will reply.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap grid grid-2">
+    <div>
+      {done ? (
+        <div class="card"><h2 class="mt-0">Message sent</h2><p>Thank you. Your message has been delivered to the board.</p><a class="btn btn-ghost" href="/">Back to home</a></div>
+      ) : (
+        <form method="post" class="card form">
+          {error && <div class="flash flash-error" role="alert">{error}</div>}
+          <div class="field"><label for="name">Your name<span class="req">*</span></label><input id="name" name="name" type="text" autocomplete="name" required maxlength="120" value={v.name} /></div>
+          <div class="field"><label for="email">Email<span class="req">*</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254" value={v.email} /></div>
+          <div class="field"><label for="topic">Topic</label><select id="topic" name="topic">{Object.entries(TOPICS).map(([k, label]) => <option value={k} selected={k === v.topic}>{label}</option>)}</select></div>
+          <div class="field"><label for="message">Message<span class="req">*</span></label><textarea id="message" name="message" rows="6" required maxlength="5000">{v.message}</textarea></div>
+          <div class="visually-hidden" aria-hidden="true"><label for="company">Leave this field empty</label><input id="company" name="company" type="text" tabindex="-1" autocomplete="off" /></div>
+          <Turnstile />
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Send message</button></div>
+        </form>
+      )}
+    </div>
+    <div class="stack">
+      <div class="card"><h3><Icon name="mail" size={18} /> Mailing address</h3><p class="mb-0">{site.fullName}<br />{site.mailingAddress.map((l) => <>{l}<br /></>)}</p></div>
+      <div class="card"><h3><Icon name="pin" size={18} /> Pool &amp; clubhouse</h3><p>{site.clubhouseAddress.map((l) => <>{l}<br /></>)}</p><a class="btn btn-ghost btn-sm" href="/map?lot=s1-ra">Show on map</a></div>
+      <div class="panel"><strong>Owners:</strong> to report a maintenance issue or submit a request, use the <a href="/forms">online forms</a> so it can be tracked.</div>
+    </div>
+  </div></section>
+</Base>

@@ -1,0 +1,31 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { fmtDate } from '~/lib/format';
+const db = Astro.locals.supabase;
+const [{ data: surveys }, { data: receipts }] = await Promise.all([
+  db.from('surveys').select('id,slug,title,intro,status,closes_at,anonymous').neq('status', 'draft').order('created_at', { ascending: false }),
+  db.from('survey_receipts').select('survey_id,created_at'),
+]);
+const done = new Map((receipts ?? []).map((r) => [r.survey_id, r.created_at]));
+---
+<Shell title="Surveys" area="members">
+  <p class="eyebrow">Have your say</p>
+  <h1>Surveys</h1>
+  <p class="lead">Quick questionnaires from the board and committees. Answers are tallied automatically for the organizers.</p>
+  <div class="stack mt-3">
+    {(surveys ?? []).length === 0 && <p class="empty">There are no surveys right now.</p>}
+    {(surveys ?? []).map((s) => (
+      <article class="card">
+        <div class="spread">
+          <div>
+            <div class="row">{s.status === 'open' ? <span class="badge badge-green">Open</span> : <span class="badge badge-sand">Closed</span>}{s.anonymous && <span class="badge">Anonymous</span>}{done.has(s.id) && <span class="badge badge-lock"><Icon name="check" size={12} /> Answered {fmtDate(done.get(s.id)!)}</span>}</div>
+            <h2 class="mt-1" style="font-size:1.3rem">{s.title}</h2>
+            {s.intro && <p class="small muted mb-0">{s.intro.slice(0, 220)}{s.intro.length > 220 && '…'}</p>}
+          </div>
+          {s.status === 'open' && !done.has(s.id) && <a class="btn btn-primary" href={`/members/surveys/${s.slug}`}>Start survey</a>}
+        </div>
+      </article>
+    ))}
+  </div>
+</Shell>

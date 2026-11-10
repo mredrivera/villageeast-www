@@ -1,0 +1,50 @@
+---
+import Base from '~/layouts/Base.astro';
+import Icon from '~/components/Icon.astro';
+import facts from '~/data/community-facts.json';
+import { site } from '~/data/site';
+const items = [
+  { icon: 'pool', title: 'Swimming pool', text: 'The community pool is open through the summer season and looked after by a pool caretaker. Pool rules are in the Facility Rules and Requirements.' },
+  { icon: 'home', title: 'Clubhouse', text: 'The pool clubhouse at 402 Indian Ridge Drive hosts the annual membership meeting, potlucks and Social Club events.' },
+  { icon: 'court', title: 'Activity courts', text: 'Tennis, pickleball and basketball on the resurfaced multi-purpose court.' },
+  { icon: 'ramp', title: 'Private gated boat ramp', text: 'Launch from our own paved ramp with a gated entrance for owners.' },
+  { icon: 'boat', title: 'Day dock', text: 'Tie up at the community day dock on the Roanoke River channel near marker R26.' },
+  { icon: 'grid', title: 'Boat & trailer storage', text: 'Two storage lots for owners. Apply online and the Grounds Committee will assign a space.' },
+  { icon: 'road', title: 'Private roads', text: 'The association maintains all subdivision roads, including paving, patching and snow removal.' },
+  { icon: 'sun', title: 'Green belt', text: 'Shared green belt parcels preserve trees and open space throughout the community.' },
+];
+const civic = [
+  { icon: 'fire', label: 'Fire district', value: facts.fireDistrict ? `${facts.fireDistrict.NAME} (${facts.fireDistrict.CompanyNumber})` : null },
+  { icon: 'school', label: 'Elementary school', value: facts.elementary?.SCHOOL },
+  { icon: 'school', label: 'Middle school', value: facts.middle?.MIDDLE_SCHOOL },
+  { icon: 'school', label: 'High school', value: facts.high?.HIGH_SCHOOL },
+  { icon: 'vote', label: 'Voting precinct', value: facts.precinct ? `${facts.precinct.Precinct} (#${facts.precinct.PrecinctNumber})` : null },
+  { icon: 'trash', label: 'Nearest collection center', value: facts.collectionCenter ? `${facts.collectionCenter.SITE_NAME}, ${facts.collectionCenter.miles} mi` : null },
+  { icon: 'map', label: 'Zoning', value: facts.zoning ? `${facts.zoning.ZONING}: ${facts.zoning.ZONING_DISTRICT}` : null },
+].filter((c) => c.value);
+---
+<Base title="Amenities" description="Pool, clubhouse, courts, private boat ramp, day dock and boat storage at Village East on Smith Mountain Lake.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Life at Village East</p>
+    <h1>Amenities</h1>
+    <p class="lead">Owners share a pool and clubhouse, courts, a private gated boat ramp with a day dock, and two boat trailer storage lots.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap">
+    <div class="grid grid-4">
+      {items.map((a) => (<div class="card"><div class="card-icon"><Icon name={a.icon} size={22} /></div><h3>{a.title}</h3><p class="small muted">{a.text}</p></div>))}
+    </div>
+    <div class="row mt-3">
+      <a class="btn btn-primary" href="/map"><Icon name="map" size={18} /> Find them on the map</a>
+      <a class="btn btn-ghost" href="/documents#rules">Facility rules</a>
+      <a class="btn btn-ghost" href="/forms">Apply for boat storage</a>
+    </div>
+  </div></section>
+  <section class="section band-sand"><div class="wrap">
+    <p class="eyebrow">Good to know</p>
+    <h2>Local services for {site.name}</h2>
+    <p class="muted">From Bedford County's public GIS records for the centre of the community.</p>
+    <div class="grid grid-3 mt-2">
+      {civic.map((c) => (<div class="card"><div class="row"><Icon name={c.icon} /><span class="small muted">{c.label}</span></div><p class="mt-1 mb-0"><strong>{c.value}</strong></p></div>))}
+    </div>
+  </div></section>
+</Base>

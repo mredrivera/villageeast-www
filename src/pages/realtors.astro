@@ -1,0 +1,35 @@
+---
+import Base from '~/layouts/Base.astro';
+import DocList, { type Doc } from '~/components/DocList.astro';
+import { site } from '~/data/site';
+const { data } = await Astro.locals.supabase.from('documents').select('id,title,description,doc_date,file_name,size_bytes,visibility')
+  .eq('visibility', 'public').or('category.eq.realtor,title.eq."Costs for Documents"').order('title');
+---
+<Base title="Realtor information" description="Disclosure packet and governing documents for Village East real estate transactions.">
+  <div class="page-head"><div class="wrap">
+    <p class="eyebrow">Buying or selling</p>
+    <h1>Realtor information</h1>
+    <p class="lead">Everything a realtor, buyer or closing agent needs for a Village East transaction.</p>
+  </div></div>
+  <section class="section-tight"><div class="wrap grid grid-2">
+    <div class="card"><h2>Real estate documents</h2><DocList docs={(data ?? []) as Doc[]} /></div>
+    <div class="stack">
+      <div class="card">
+        <h3>At a glance</h3>
+        <dl class="dl">
+          <dt>Association</dt><dd>{site.fullName}</dd>
+          <dt>Mailing address</dt><dd>{site.mailingAddress.join(', ')}</dd>
+          <dt>Location</dt><dd>{site.byLand}</dd>
+          <dt>Amenities</dt><dd>Pool, clubhouse, courts, private gated boat ramp, day dock, boat trailer storage</dd>
+          <dt>Roads</dt><dd>Private, maintained by the association</dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Need a status letter or packet?</h3>
+        <p class="small">See <em>Costs for Documents</em> for fees, then contact the board with the property address and closing date.</p>
+        <a class="btn btn-primary btn-sm" href="/contact?topic=realtor">Contact the board</a>
+        <a class="btn btn-ghost btn-sm" href="/map">View the lot map</a>
+      </div>
+    </div>
+  </div></section>
+</Base>

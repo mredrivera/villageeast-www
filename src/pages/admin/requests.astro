@@ -1,0 +1,26 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import { getForm, STATUS_LABEL } from '~/lib/forms/definitions';
+import { fmtDate } from '~/lib/format';
+const filter = Astro.url.searchParams.get('show') === 'all' ? 'all' : 'open';
+let q = Astro.locals.supabase.from('form_submissions').select('id,reference,form_type,summary,status,created_at,lot_id,lots(address,label,section),profiles(full_name)').order('created_at', { ascending: false }).limit(200);
+if (filter === 'open') q = q.in('status', ['submitted', 'in_review', 'needs_info']);
+const { data } = await q;
+const rows = (data ?? []) as any[];
+const badge: Record<string, string> = { approved: 'badge badge-green', denied: 'badge badge-red', needs_info: 'badge badge-amber', withdrawn: 'badge badge-lock' };
+---
+<Shell title="Requests" area="admin">
+  <p class="eyebrow">Review queue</p>
+  <div class="spread"><h1 class="mb-0">Requests</h1>
+    <div class="segmented"><a href="/admin/requests"><button type="button" aria-pressed={filter === 'open' ? 'true' : 'false'} tabindex="-1">Open</button></a><a href="/admin/requests?show=all"><button type="button" aria-pressed={filter === 'all' ? 'true' : 'false'} tabindex="-1">All</button></a></div>
+  </div>
+  {rows.length === 0 ? <p class="empty mt-3">Nothing waiting for review.</p> : (
+    <div class="table-wrap mt-3"><table class="table">
+      <thead><tr><th>Reference</th><th>Type</th><th>Property</th><th>From</th><th>Submitted</th><th>Status</th></tr></thead>
+      <tbody>{rows.map((r) => (
+        <tr><td><a href={`/members/requests/${r.id}`}><strong>{r.reference}</strong></a></td><td>{getForm(r.form_type)?.title ?? r.form_type}<div class="small muted">{r.summary}</div></td>
+          <td>{r.lots ? (r.lots.address ?? `Sec ${r.lots.section} ${r.lots.label}`) : '—'}</td><td>{r.profiles?.full_name || '—'}</td><td>{fmtDate(r.created_at)}</td><td><span class={badge[r.status] ?? 'badge'}>{STATUS_LABEL[r.status]}</span></td></tr>
+      ))}</tbody>
+    </table></div>
+  )}
+</Shell>

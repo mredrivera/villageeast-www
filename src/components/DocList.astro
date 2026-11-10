@@ -1,0 +1,27 @@
+---
+import Icon from './Icon.astro';
+import { fmtBytes, fmtDate } from '~/lib/format';
+export type Doc = { id: string; title: string; description: string | null; doc_date: string | null; file_name: string; size_bytes: number; visibility: string; is_archived?: boolean };
+interface Props { docs: Doc[]; empty?: string; showLock?: boolean }
+const { docs, empty = 'Nothing here yet.', showLock = false } = Astro.props;
+const ext = (name: string) => (name.split('.').pop() ?? 'file').slice(0, 4).toUpperCase();
+---
+{docs.length === 0 ? <p class="empty">{empty}</p> : (
+  <ul class="list">
+    {docs.map((d) => (
+      <li class="doc-row">
+        <span class="doc-ico" aria-hidden="true">{ext(d.file_name)}</span>
+        <div>
+          <a class="doc-title" href={`/documents/${d.id}`}>{d.title}</a>
+          {d.description && <div class="small muted">{d.description}</div>}
+          <div class="doc-meta">
+            {d.doc_date && <span>{fmtDate(d.doc_date)} &middot; </span>}
+            {ext(d.file_name)} &middot; {fmtBytes(d.size_bytes)}
+            {showLock && d.visibility !== 'public' && <span class="badge badge-lock"><Icon name="lock" size={12} /> Owners</span>}
+          </div>
+        </div>
+        <a class="btn btn-ghost btn-sm doc-action" href={`/documents/${d.id}?download=1`} aria-label={`Download ${d.title}`}><Icon name="download" size={16} /> Download</a>
+      </li>
+    ))}
+  </ul>
+)}

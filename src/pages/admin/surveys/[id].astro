@@ -1,0 +1,84 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import FormFields from '~/components/FormFields.astro';
+import { displayAnswer, isInput, tally, toCsv, type Answers, type Field } from '~/lib/forms/schema';
+import { fmtDateTime, withFlash } from '~/lib/format';
+import { audit } from '~/lib/supabase';
+
+const db = Astro.locals.supabase;
+const me = Astro.locals.profile!;
+const id = Astro.params.id ?? '';
+if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Not found', { status: 404 });
+const { data: survey } = await db.from('surveys').select('*').eq('id', id).maybeSingle();
+if (!survey) return new Response('Not found', { status: 404 });
+const fields = survey.fields as Field[];
+const self = `/admin/surveys/${id}`;
+
+if (Astro.request.method === 'POST') {
+  const status = String((await Astro.request.formData()).get('status') ?? '');
+  if (!['draft', 'open', 'closed'].includes(status)) return Astro.redirect(self, 303);
+  await db.from('surveys').update({ status }).eq('id', id);
+  await audit(me.id, 'survey_status', 'survey', id, { status });
+  return Astro.redirect(withFlash(self, 'ok', `Survey is now ${status}.`), 303);
+}
+
+const { data: rows } = await db.from('survey_responses').select('id,answers,created_at,lot_id,profiles(full_name),lots(address,label)').eq('survey_id', id).order('created_at');
+const responses = (rows ?? []) as any[];
+const inputs = fields.filter(isInput);
+
+if (Astro.url.searchParams.has('csv')) {
+  const header = ['Submitted', ...(survey.anonymous ? [] : ['Name', 'Property']), ...inputs.map((f) => f.label)];
+  const body = responses.map((r) => [r.created_at, ...(survey.anonymous ? [] : [r.profiles?.full_name ?? '', r.lots?.address ?? r.lots?.label ?? '']), ...inputs.map((f) => displayAnswer(f, (r.answers as Answers)[f.name]))]);
+  await audit(me.id, 'survey_export', 'survey', id, { rows: body.length });
+  return new Response('﻿' + toCsv([header, ...body]), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${survey.slug}-responses.csv"`, 'cache-control': 'private, no-store' } });
+}
+const tallies = tally(fields, responses.map((r) => r.answers as Answers));
+---
+<Shell title={survey.title} area="admin">
+  <p class="eyebrow"><a href="/admin/surveys">Surveys</a></p>
+  <div class="spread"><h1 class="mb-0">{survey.title}</h1>
+    <div class="row">
+      <form method="post" class="row">
+        <select name="status" aria-label="Status" style="width:auto">{['draft', 'open', 'closed'].map((s) => <option value={s} selected={s === survey.status}>{s}</option>)}</select>
+        <button class="btn btn-ghost btn-sm" type="submit">Set status</button>
+      </form>
+      <a class="btn btn-primary btn-sm" href={`${self}?csv`}>Export CSV</a>
+    </div>
+  </div>
+  <div class="kpi-grid mt-3">
+    <div class="kpi"><div class="kpi-label">Responses</div><div class="kpi-value">{responses.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Status</div><div class="kpi-value" style="text-transform:capitalize">{survey.status}</div></div>
+    <div class="kpi"><div class="kpi-label">Latest response</div><div class="kpi-value" style="font-size:1.1rem">{responses.length ? fmtDateTime(responses[responses.length - 1].created_at) : '—'}</div></div>
+  </div>
+
+  <h2 class="mt-4">Results</h2>
+  {responses.length === 0 ? <p class="empty">No responses yet. {survey.status === 'draft' && 'Set the status to "open" to publish it to members.'}</p> : (
+    <div class="grid grid-2">
+      {tallies.map((t) => (
+        <section class="card">
+          <h3>{t.field.label}</h3>
+          <p class="small muted">{t.total} answered{t.kind === 'numeric' && t.average !== null && <> &middot; average <strong>{t.average.toFixed(1)}</strong></>}</p>
+          {(t.kind === 'choices' || (t.kind === 'numeric' && t.rows.length > 0)) && (() => { const max = Math.max(1, ...t.rows.map((r) => r.count)); return (
+            <div class="bars">{t.rows.map((r) => (
+              <div class="bar-row"><span>{r.label}</span><span class="bar-track"><span class="bar-fill" style={`width:${(r.count / max) * 100}%`}></span></span><span class="num">{r.count}</span></div>
+            ))}</div>
+          ); })()}
+          {t.kind === 'text' && (t.samples.length === 0 ? <p class="muted mb-0">No answers.</p> : <ul class="list small">{t.samples.slice(0, 30).map((s) => <li class="pre-line">{s}</li>)}</ul>)}
+        </section>
+      ))}
+    </div>
+  )}
+
+  {!survey.anonymous && responses.length > 0 && (
+    <>
+      <h2 class="mt-4">Who responded</h2>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Property</th><th>Submitted</th></tr></thead><tbody>
+        {responses.map((r) => <tr><td>{r.profiles?.full_name ?? '—'}</td><td>{r.lots?.address ?? r.lots?.label ?? '—'}</td><td>{fmtDateTime(r.created_at)}</td></tr>)}
+      </tbody></table></div>
+    </>
+  )}
+
+  <details class="card mt-4"><summary><strong>Preview the form</strong></summary>
+    <form class="form mt-2 narrow"><fieldset disabled style="border:0;padding:0;margin:0;display:grid;gap:18px"><FormFields fields={fields} /></fieldset></form>
+  </details>
+</Shell>

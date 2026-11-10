@@ -1,0 +1,30 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { FORMS, getForm, STATUS_LABEL } from '~/lib/forms/definitions';
+import { fmtDate } from '~/lib/format';
+const { data } = await Astro.locals.supabase.from('form_submissions').select('id,reference,form_type,summary,status,created_at,updated_at')
+  .eq('user_id', Astro.locals.profile!.id).order('created_at', { ascending: false });
+const badge: Record<string, string> = { approved: 'badge badge-green', denied: 'badge badge-red', needs_info: 'badge badge-amber', withdrawn: 'badge badge-lock' };
+---
+<Shell title="My requests" area="members">
+  <p class="eyebrow">Forms &amp; requests</p>
+  <h1>My requests</h1>
+  <p class="lead">Start a new request or follow one you have already submitted.</p>
+  <div class="grid grid-2 mt-3">
+    {FORMS.map((f) => (
+      <a class="card card-link" href={`/members/requests/new/${f.type}`}>
+        <div class="row"><span class="card-icon mb-0"><Icon name={f.icon} size={22} /></span><div><h3 class="mb-0">{f.title}</h3><span class="small muted">{f.reviewedBy}</span></div></div>
+      </a>
+    ))}
+  </div>
+  <h2 class="mt-4">Submitted</h2>
+  {(data ?? []).length === 0 ? <p class="empty">You have not submitted any requests yet.</p> : (
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Reference</th><th>Request</th><th>Submitted</th><th>Status</th></tr></thead>
+      <tbody>{(data ?? []).map((r) => (
+        <tr><td><a href={`/members/requests/${r.id}`}><strong>{r.reference}</strong></a></td><td>{getForm(r.form_type)?.title ?? r.form_type}<div class="small muted">{r.summary}</div></td><td>{fmtDate(r.created_at)}</td><td><span class={badge[r.status] ?? 'badge'}>{STATUS_LABEL[r.status] ?? r.status}</span></td></tr>
+      ))}</tbody>
+    </table></div>
+  )}
+</Shell>

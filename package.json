@@ -1,0 +1,53 @@
+{
+  "name": "villageeast-www",
+  "version": "1.0.0",
+  "description": "Village East Property Owners Association website",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "vitest run",
+    "deploy": "astro build && wrangler deploy",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "gis:sync": "node scripts/gis-sync.mjs",
+    "seed": "node scripts/seed.mjs",
+    "types": "wrangler types"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mredrivera/villageeast-www.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/mredrivera/villageeast-www/issues"
+  },
+  "homepage": "https://github.com/mredrivera/villageeast-www#readme",
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.4.6",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
+    "astro": "^7.4.8",
+    "echarts": "^6.1.0",
+    "maplibre-gl": "^6.17.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@types/geojson": "^7946.0.16",
+    "supabase": "^3.1.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.159.0"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  }
+}
