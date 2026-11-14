@@ -46,10 +46,10 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 ```
 
 ```bash
-npx supabase db push
+npx supabase db push --remote
 ```
 
-`db push` applies the two files in `supabase/migrations/`. It should end with "Finished supabase db push".
+`--remote` targets the linked project (without it the CLI aims at a local database). `db push` applies the two files in `supabase/migrations/`. It should end with "Finished supabase db push".
 
 ### 1b. Lock down sign-in
 
