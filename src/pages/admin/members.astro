@@ -59,7 +59,7 @@ if (Astro.request.method === 'POST') {
     if (id === me.id && (role !== 'admin' || status !== 'approved')) return back('error', 'You cannot remove your own administrator access.');
     const { error } = await db.from('profiles').update({ role, status, lot_id: lotId }).eq('id', id);
     if (error) return back('error', 'Could not update that member.');
-    if (status === 'suspended') await createServiceClient().auth.admin.signOut(id).catch(() => {}); // best effort: end live sessions
+    // No session revocation is needed: status is checked on every request (middleware and row-level security).
     await audit(me.id, 'member_updated', 'profile', id, { role, status });
     return back('ok', 'Member updated.');
   }

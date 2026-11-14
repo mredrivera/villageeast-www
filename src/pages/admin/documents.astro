@@ -31,13 +31,13 @@ if (Astro.request.method === 'POST') {
     if (docDate && !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) return back('error', 'Enter a valid date.');
     const type = TYPES[file.type];
     if (!type) return back('error', 'Only PDF, Word (.docx) and Excel (.xlsx) files can be uploaded.');
-    if (file.size > 50 * 1024 * 1024) return back('error', 'Files can be at most 50 MB.');
+    if (file.size > 30 * 1024 * 1024) return back('error', 'Files can be at most 30 MB.');
     const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     if (!type.magic.every((b, i) => head[i] === b)) return back('error', 'That file does not match its type.');
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'document';
     const path = `${category}/${docDate ? docDate + '-' : ''}${slug}-${crypto.randomUUID().slice(0, 8)}.${type.ext}`;
     const service = createServiceClient();
-    const up = await service.storage.from('documents').upload(path, await file.arrayBuffer(), { contentType: file.type });
+    const up = await service.storage.from('documents').upload(path, file, { contentType: file.type });
     if (up.error) { console.error('doc upload', up.error.message); return back('error', 'The upload failed. Please try again.'); }
     const { error } = await db.from('documents').insert({ title, description: String(form.get('description') ?? '').trim().slice(0, 500) || null, category, visibility, doc_date: docDate || null, storage_path: path, file_name: `${slug}.${type.ext}`, mime_type: file.type, size_bytes: file.size });
     if (error) { await service.storage.from('documents').remove([path]); return back('error', 'Could not save the document.'); }
@@ -77,7 +77,7 @@ const { data: docs } = await q;
     <form method="post" enctype="multipart/form-data" class="form mt-2">
       <input type="hidden" name="action" value="upload" />
       <div class="grid grid-2">
-        <div class="field"><label for="file">File (PDF, Word or Excel, up to 50 MB)</label><input id="file" name="file" type="file" required accept=".pdf,.docx,.xlsx" /></div>
+        <div class="field"><label for="file">File (PDF, Word or Excel, up to 30 MB)</label><input id="file" name="file" type="file" required accept=".pdf,.docx,.xlsx" /></div>
         <div class="field"><label for="title">Title</label><input id="title" name="title" type="text" required maxlength="200" /></div>
         <div class="field"><label for="category">Category</label><select id="category" name="category" required>{Object.entries(CATEGORIES).map(([k, v]) => <option value={k}>{v}</option>)}</select></div>
         <div class="field"><label for="visibility">Who can see it</label><select id="visibility" name="visibility" required>{Object.entries(VIS).map(([k, v]) => <option value={k} selected={k === 'members'}>{v}</option>)}</select></div>

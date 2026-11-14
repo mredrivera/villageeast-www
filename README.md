@@ -44,7 +44,7 @@ scripts/              gis-sync (county data), seed (load a project), import-lega
 
 ## Security model
 
-- **Sign-in is passwordless.** Owners enter their email and receive a 6-digit code that expires in
+- **Sign-in is passwordless.** Owners enter their email and receive a one-time code that expires in
   10 minutes. There are no passwords to leak or reuse. Self-registration is off: an administrator
   creates each account after checking it against the lot roster, and responses never reveal whether
   an email has an account.
@@ -57,7 +57,8 @@ scripts/              gis-sync (county data), seed (load a project), import-lega
   Downloads go through the server, which issues a link valid for 60 seconds.
 - **Secret ballots.** "Which lot voted" and "what was chosen" are stored in separate tables with no
   link between them. Vote rows cannot be read by anyone; only tally functions can count them, and
-  members see results only after voting closes.
+  nobody, board included, sees results until voting closes. A published ballot cannot go back to
+  draft, so its questions cannot change once voting may have started.
 - **Web hardening.** Strict Content-Security-Policy with no inline or third-party scripts (Turnstile
   excepted), HSTS, no framing, same-origin checks on every form post, rate limiting, server-side
   validation of every field, upload type checks by file signature, and an audit log of admin actions.

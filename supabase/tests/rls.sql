@@ -80,4 +80,14 @@ select pg_temp.expect((select paid_on from public.dues where year = 2099 and lot
 delete from public.dues_periods where year = 2099;
 select pg_temp.expect((select count(*) from public.dues_periods where year = 2099) = 1, 'board member cannot delete a dues year');
 
+-- Hardening: results stay hidden while voting is open, even for staff; published ballots are frozen.
+select pg_temp.expect_error($$select * from public.ballot_results('00000000-0000-0000-0000-0000000000b1')$$, 'board member cannot read a live tally');
+select pg_temp.expect_error($$update public.ballots set status = 'draft' where id = '00000000-0000-0000-0000-0000000000b1'$$, 'published ballot cannot return to draft');
+reset role;
+insert into public.form_submissions (id, reference, form_type, user_id, lot_id, data) values ('00000000-0000-0000-0000-0000000000d1', 'ARC', 'arc_request', '00000000-0000-0000-0000-0000000000a1', 't-1', '{}');
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($$insert into public.submission_files (submission_id, storage_path, file_name, mime_type, size_bytes) values ('00000000-0000-0000-0000-0000000000d1', 'someone-else/secret.pdf', 'x.pdf', 'application/pdf', 10)$$, 'attachment row cannot point outside the request folder');
+select pg_temp.expect_error($$insert into public.submission_events (submission_id, actor, kind, status) values ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000000a1', 'comment', 'approved')$$, 'member cannot attach a status to a comment');
+select pg_temp.expect_error($$insert into public.form_submissions (reference, form_type, user_id, lot_id, data) values ('ARC', 'arc_request', '00000000-0000-0000-0000-0000000000a1', 't-1', jsonb_build_object('x', (select string_agg(md5(i::text), '') from generate_series(1, 20000) i)))$$, 'oversized request data is rejected');
+
 rollback;

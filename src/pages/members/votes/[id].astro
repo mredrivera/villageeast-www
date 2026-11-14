@@ -2,7 +2,6 @@
 import Shell from '~/layouts/Shell.astro';
 import BallotResults, { type Question } from '~/components/BallotResults.astro';
 import Icon from '~/components/Icon.astro';
-import { isStaff } from '~/lib/auth';
 import { fmtDateTime, withFlash } from '~/lib/format';
 import { audit } from '~/lib/supabase';
 
@@ -42,7 +41,8 @@ if (Astro.request.method === 'POST' && state === 'open' && !receipt) {
     }
   }
 }
-const showResults = state === 'closed' || isStaff(profile);
+// Nobody sees a tally while voting is open: a running count would let votes be matched to voters.
+const showResults = state === 'closed';
 const { data: results } = showResults ? await db.rpc('ballot_results', { p_ballot: id }) : { data: null };
 ---
 <Shell title={ballot.title} area="members">
@@ -89,7 +89,7 @@ const { data: results } = showResults ? await db.rpc('ballot_results', { p_ballo
 
   {showResults && results && (
     <section class="mt-3">
-      <h2>{state === 'closed' ? 'Results' : 'Live tally (board only)'}</h2>
+      <h2>Results</h2>
       <BallotResults questions={questions} results={results} turnout={turnout} />
     </section>
   )}

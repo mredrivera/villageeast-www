@@ -36,7 +36,7 @@ if (Astro.request.method === 'POST') {
       for (const file of Object.values(result.files).flat()) {
         const ext = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type] ?? 'bin';
         const path = `${row.id}/${crypto.randomUUID()}.${ext}`; // server-chosen name: the uploaded filename is never used as a path
-        const up = await service.storage.from('submissions').upload(path, await file.arrayBuffer(), { contentType: file.type });
+        const up = await service.storage.from('submissions').upload(path, file, { contentType: file.type });
         const safeName = file.name.replace(/[^\w.\- ()]/g, '_').slice(-120) || `attachment.${ext}`;
         const rec = up.error ? up : await db.from('submission_files').insert({ submission_id: row.id, storage_path: path, file_name: safeName, mime_type: file.type, size_bytes: file.size });
         if (rec.error) { console.error('attachment', rec.error.message); failed.push(file.name); }

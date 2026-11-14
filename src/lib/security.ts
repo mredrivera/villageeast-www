@@ -38,13 +38,17 @@ export function applySecurityHeaders(headers: Headers, { privateContent }: { pri
   }
 }
 
-/** Best-effort per-IP throttle using the Workers Rate Limiting binding (no-op when not configured). */
-export async function rateLimitOk(request: Request, bucket: string): Promise<boolean> {
+/**
+ * Best-effort throttle using the Workers Rate Limiting binding (no-op when not configured).
+ * Keyed by the caller's IP address unless `subject` is given (for example an email address, so
+ * guesses against one account are limited no matter how many addresses they come from).
+ */
+export async function rateLimitOk(request: Request, bucket: string, subject?: string): Promise<boolean> {
   const limiter = config.formLimiter;
   if (!limiter) return true;
-  const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+  const who = subject ?? request.headers.get('cf-connecting-ip') ?? 'unknown';
   try {
-    return (await limiter.limit({ key: `${bucket}:${ip}` })).success;
+    return (await limiter.limit({ key: `${bucket}:${who}` })).success;
   } catch {
     return true;
   }

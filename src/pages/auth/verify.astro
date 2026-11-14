@@ -13,8 +13,10 @@ let error = '';
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const token = String(form.get('code') ?? '').replace(/\D/g, '');
-  if (token.length !== 6) error = 'Enter the 6-digit code from the email.';
-  else if (!(await rateLimitOk(Astro.request, 'verify'))) error = 'Too many attempts. Please wait a minute and try again.';
+  // Codes are 6 digits by default; Supabase can be set to issue longer ones (up to 10).
+  if (token.length < 6 || token.length > 10) error = 'Enter the code from the email.';
+  // Limited per visitor and per account, so one account's code cannot be guessed from many addresses.
+  else if (!(await rateLimitOk(Astro.request, 'verify')) || !(await rateLimitOk(Astro.request, 'verify-account', pending.email))) error = 'Too many attempts. Please wait a minute and try again.';
   else {
     const { data, error: verifyError } = await Astro.locals.supabase.auth.verifyOtp({ email: pending.email, token, type: 'email' });
     if (verifyError || !data.user) error = 'That code is incorrect or has expired. Check the latest email, or request a new code.';
@@ -32,7 +34,7 @@ const masked = pending.email.replace(/^(.).*(@.*)$/, '$1•••$2');
     <div class="card auth-card">
       <div class="card-icon"><Icon name="mail" size={22} /></div>
       <h1 class="mt-0" style="font-size:1.8rem">Check your email</h1>
-      <p class="muted">If <strong>{masked}</strong> has a Village East account, a 6-digit code is on its way. It expires in 10 minutes.</p>
+      <p class="muted">If <strong>{masked}</strong> has a Village East account, a sign-in code is on its way. It expires in 10 minutes.</p>
       {error && <div class="flash flash-error" role="alert">{error}</div>}
       <form method="post" class="form">
         <div class="field">

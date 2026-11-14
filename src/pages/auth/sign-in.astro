@@ -20,13 +20,11 @@ if (Astro.request.method === 'POST') {
   else {
     // shouldCreateUser:false => a code is only ever emailed to an existing, admin-created account.
     const { error: otpError } = await Astro.locals.supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-    if (otpError && otpError.status === 429) error = 'A code was sent recently. Please wait a moment before requesting another.';
-    else {
-      if (otpError && !/signups? not allowed|not found/i.test(otpError.message)) console.error('signInWithOtp', otpError.message);
-      // Same response whether or not the address has an account (no account enumeration).
-      rememberLogin(Astro.cookies, email, safeNext(String(form.get('next') ?? ''), next));
-      return Astro.redirect('/auth/verify', 303);
-    }
+    // A 429 means a code went out moments ago and is still valid, which only happens for a real
+    // account, so it gets the same response as everything else (no account enumeration).
+    if (otpError && otpError.status !== 429 && !/signups? not allowed|not found/i.test(otpError.message)) console.error('signInWithOtp', otpError.message);
+    rememberLogin(Astro.cookies, email, safeNext(String(form.get('next') ?? ''), next));
+    return Astro.redirect('/auth/verify', 303);
   }
 }
 ---

@@ -59,7 +59,8 @@ In the Supabase dashboard, under **Authentication**:
    - Turn **off** "Allow new users to sign up". (Accounts are created only by an administrator, so a
      sign-in code can never be emailed to a stranger.)
    - Under **Email**: keep it enabled, set **Email OTP Expiration** to `600` seconds and
-     **Email OTP Length** to `6`.
+     **Email OTP Length** to `8`. (Supabase's sign-in API is reachable directly with the public key,
+     so the code itself has to be hard to guess; 8 digits is 100 times harder than 6.)
 2. **URL Configuration**
    - **Site URL**: `https://villageeast.toston.io`
 3. **Emails > Templates > Magic Link**
@@ -164,7 +165,7 @@ re-run. Delete `.env.seed` afterwards if you like.
 ## 6. Try it
 
 1. Open <https://villageeast.toston.io> and choose **Owner sign in**.
-2. Enter your email. A 6-digit code arrives within a few seconds; enter it.
+2. Enter your email. A one-time code arrives within a few seconds; enter it.
 3. You land in the member area. The **Admin** button in the header opens the admin tools.
 
 A quick tour for showing others: **Community map** (tap a lot), **Financials** (click through the
