@@ -6,7 +6,7 @@ import { fmtDateTime } from '~/lib/format';
 const db = Astro.locals.supabase;
 const admin = isAdmin(Astro.locals.profile);
 const count = async (table: string, build: (q: any) => any = (q) => q) => (await build(db.from(table).select('id', { count: 'exact', head: true }))).count ?? 0;
-const [openRequests, unread, pendingAccess, members, responses, votes, log] = await Promise.all([
+const [openRequests, unread, pendingAccess, members, responses, votes, log, duesYear] = await Promise.all([
   count('form_submissions', (q) => q.in('status', ['submitted', 'in_review', 'needs_info'])),
   count('contact_messages', (q) => q.eq('handled', false)),
   admin ? count('access_requests', (q) => q.eq('status', 'pending')) : 0,
@@ -14,10 +14,13 @@ const [openRequests, unread, pendingAccess, members, responses, votes, log] = aw
   count('survey_responses'),
   db.from('ballots').select('id', { count: 'exact', head: true }).eq('status', 'published').then((r) => r.count ?? 0),
   admin ? db.from('audit_log').select('id,action,entity,created_at,meta').order('created_at', { ascending: false }).limit(12).then((r) => r.data ?? []) : [],
+  db.from('dues_periods').select('year').order('year', { ascending: false }).limit(1).maybeSingle().then((r) => (r.data?.year as number | undefined) ?? null),
 ]);
+const unpaidDues = duesYear ? ((await db.from('dues').select('id', { count: 'exact', head: true }).eq('year', duesYear).is('paid_on', null)).count ?? 0) : null;
 const tiles = [
   { href: '/admin/requests', label: 'Open requests', value: openRequests, icon: 'inbox' },
   { href: '/admin/messages', label: 'Unread messages', value: unread, icon: 'mail' },
+  ...(unpaidDues !== null ? [{ href: '/admin/dues?show=unpaid', label: `Lots with ${duesYear} dues unpaid`, value: unpaidDues, icon: 'dollar' }] : []),
   ...(admin ? [{ href: '/admin/members', label: 'Access requests', value: pendingAccess, icon: 'users' }] : []),
   { href: '/admin/members', label: 'Active members', value: members, icon: 'user' },
   { href: '/admin/surveys', label: 'Survey responses', value: responses, icon: 'check' },

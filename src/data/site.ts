@@ -40,6 +40,7 @@ export const memberNav = [
 export const adminNav = [
   { href: '/admin', label: 'Overview', icon: 'grid', adminOnly: false },
   { href: '/admin/requests', label: 'Requests', icon: 'inbox', adminOnly: false },
+  { href: '/admin/dues', label: 'Dues', icon: 'dollar', adminOnly: false },
   { href: '/admin/surveys', label: 'Surveys', icon: 'check', adminOnly: false },
   { href: '/admin/votes', label: 'Ballots', icon: 'ballot', adminOnly: false },
   { href: '/admin/content', label: 'News & events', icon: 'news', adminOnly: false },

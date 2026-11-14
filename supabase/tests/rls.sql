@@ -57,4 +57,27 @@ select pg_temp.expect((select count(*) from public.documents where visibility <>
 select pg_temp.expect_error($$select public.cast_ballot('00000000-0000-0000-0000-0000000000b1', '{}')$$, 'pending account cannot vote');
 select pg_temp.expect((select count(*) from public.member_directory()) = 0, 'pending account gets an empty directory');
 
+-- Dues: an owner sees only their own lot; only staff can record payments.
+reset role;
+insert into public.dues_periods (year, due_date) values (2099, '2099-03-01');
+insert into public.dues (year, lot_id, amount) values (2099, 't-1', 550), (2099, 't-2', 400);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect((select count(*) from public.dues where year = 2099) = 1, 'resident sees only their own lot''s dues');
+select pg_temp.expect((select lot_id from public.dues where year = 2099) = 't-1', 'the dues row a resident sees is their own');
+update public.dues set paid_on = current_date, method = 'check' where year = 2099;
+select pg_temp.expect((select paid_on from public.dues where year = 2099) is null, 'resident cannot mark dues as paid');
+select pg_temp.expect_error($$insert into public.dues (year, lot_id, amount) values (2099, 't-1', 1)$$, 'resident cannot add dues rows');
+select pg_temp.expect_error($$insert into public.dues_periods (year, due_date) values (2098, '2098-03-01')$$, 'resident cannot open a dues year');
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a3');
+select pg_temp.expect((select count(*) from public.dues) = 0, 'pending account cannot read dues');
+select pg_temp.expect((select count(*) from public.dues_periods) = 0, 'pending account cannot read dues years');
+reset role;
+update public.profiles set role = 'board' where id = '00000000-0000-0000-0000-0000000000a2';
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+select pg_temp.expect((select count(*) from public.dues where year = 2099) = 2, 'board member sees every lot''s dues');
+update public.dues set paid_on = current_date, method = 'check' where year = 2099 and lot_id = 't-1';
+select pg_temp.expect((select paid_on from public.dues where year = 2099 and lot_id = 't-1') is not null, 'board member can record a payment');
+delete from public.dues_periods where year = 2099;
+select pg_temp.expect((select count(*) from public.dues_periods where year = 2099) = 1, 'board member cannot delete a dues year');
+
 rollback;

@@ -168,8 +168,8 @@ re-run. Delete `.env.seed` afterwards if you like.
 3. You land in the member area. The **Admin** button in the header opens the admin tools.
 
 A quick tour for showing others: **Community map** (tap a lot), **Financials** (click through the
-years), **Voting** (cast the demo ballot), **My requests > Architectural review request**, then
-**Admin > Surveys** for the live tallies.
+years), **Voting** (cast the demo ballot), the dues reminder on the member overview, **My requests > Architectural review request**, then
+**Admin > Surveys** for the live tallies and **Admin > Dues** to record a payment.
 
 ## 7. Optional extras
 

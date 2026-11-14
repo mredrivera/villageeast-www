@@ -2,12 +2,13 @@
 import Shell from '~/layouts/Shell.astro';
 import Icon from '~/components/Icon.astro';
 import { STATUS_LABEL } from '~/lib/forms/definitions';
-import { dateParts, fmtDate, fmtTime } from '~/lib/format';
+import { METHOD_LABEL, STATE_BADGE, duesState, todayEastern, type Method } from '~/lib/dues';
+import { dateParts, fmtDate, fmtMoney, fmtTime } from '~/lib/format';
 
 const db = Astro.locals.supabase;
 const profile = Astro.locals.profile!;
 const nowIso = new Date().toISOString();
-const [lot, ballots, receipts, surveys, surveyReceipts, requests, events, minutes, newsletter] = await Promise.all([
+const [lot, ballots, receipts, surveys, surveyReceipts, requests, events, minutes, newsletter, duesRows] = await Promise.all([
   profile.lot_id ? db.from('lots').select('label,section,address').eq('id', profile.lot_id).maybeSingle() : Promise.resolve({ data: null }),
   db.from('ballots').select('id,title,closes_at').eq('status', 'published').lte('opens_at', nowIso).gt('closes_at', nowIso).order('closes_at'),
   db.from('ballot_receipts').select('ballot_id'),
@@ -17,7 +18,18 @@ const [lot, ballots, receipts, surveys, surveyReceipts, requests, events, minute
   db.from('events').select('id,title,starts_at,location').gte('starts_at', nowIso).order('starts_at').limit(3),
   db.from('documents').select('id,title,doc_date').eq('category', 'minutes').eq('is_archived', false).order('doc_date', { ascending: false }).limit(3),
   db.from('documents').select('id,title,doc_date').eq('category', 'newsletter').order('doc_date', { ascending: false }).limit(1),
+  // Staff can read every lot's dues, so always filter to this member's own lot.
+  profile.lot_id ? db.from('dues').select('year,amount,paid_on,method,reference,dues_periods(due_date,is_sample)').eq('lot_id', profile.lot_id).order('year', { ascending: false }).limit(4) : Promise.resolve({ data: [] }),
 ]);
+const today = todayEastern();
+const day = (iso: string) => fmtDate(`${iso}T12:00:00Z`, { dateStyle: 'long', timeZone: 'UTC' });
+const dues = ((duesRows.data ?? []) as any[]).flatMap((d) => {
+  const period = (Array.isArray(d.dues_periods) ? d.dues_periods[0] : d.dues_periods) as { due_date: string; is_sample: boolean } | null;
+  if (!period) return [];
+  return [{ year: d.year as number, amount: Number(d.amount), paidOn: d.paid_on as string | null, method: d.method as Method | null, reference: d.reference as string | null, dueDate: period.due_date, sample: period.is_sample, state: duesState(d.paid_on, period.due_date, today) }];
+});
+const currentDues = dues[0] ?? null;
+const earlierDues = dues.slice(1);
 const voted = new Set((receipts.data ?? []).map((r) => r.ballot_id));
 const answered = new Set((surveyReceipts.data ?? []).map((r) => r.survey_id));
 const openBallots = (ballots.data ?? []).filter((b) => !voted.has(b.id));
@@ -44,6 +56,26 @@ const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Go
         </a>
       ))}
     </div>
+  )}
+
+  {currentDues && (
+    <section class:list={['card', 'dues-card', 'mt-3', `is-${currentDues.state}`]} aria-label="Your dues">
+      <div class="spread">
+        <div>
+          <span class:list={['badge', STATE_BADGE[currentDues.state]]}>{currentDues.state === 'paid' ? 'Dues paid' : currentDues.state === 'due' ? 'Dues reminder' : 'Dues past due'}</span>
+          <h2 class="mt-1 mb-0" style="font-size:1.25rem">{currentDues.year} annual dues: {fmtMoney(currentDues.amount)}</h2>
+          <p class="small muted mb-0">
+            {currentDues.state === 'paid' && <>Received {day(currentDues.paidOn!)}{currentDues.method && <> by {METHOD_LABEL[currentDues.method].toLowerCase()}{currentDues.reference ? ` ${currentDues.reference}` : ''}</>}. Thank you.</>}
+            {currentDues.state === 'due' && <>Due by {day(currentDues.dueDate)}. No payment has been recorded for your lot yet.</>}
+            {currentDues.state === 'overdue' && <>This was due on {day(currentDues.dueDate)} and no payment has been recorded for your lot.</>}
+          </p>
+        </div>
+        {currentDues.state !== 'paid' && <a class="btn btn-ghost btn-sm" href="/contact">Ask the treasurer</a>}
+      </div>
+      {currentDues.state !== 'paid' && <p class="small mt-2 mb-0">Already paid? It can take a few days for the treasurer to record a payment here.</p>}
+      {earlierDues.length > 0 && <p class="small muted mt-2 mb-0">Earlier years: {earlierDues.map((d) => `${d.year} ${d.state === 'paid' ? 'paid' : 'not recorded as paid'}`).join(' · ')}</p>}
+      {currentDues.sample && <p class="small muted mt-2 mb-0"><Icon name="info" size={14} /> Sample data: this status was invented to demonstrate the feature and is not a real payment record.</p>}
+    </section>
   )}
 
   <div class="grid grid-3 mt-3">

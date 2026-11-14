@@ -1,0 +1,267 @@
+---
+/**
+ * Dues ledger for board members and administrators: who has paid for a given year, with tools to
+ * record a payment, undo one, adjust an amount, and export the list. Access is enforced twice: the
+ * middleware only lets staff reach /admin, and row-level security only lets staff read or change
+ * other lots' rows.
+ */
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { isAdmin } from '~/lib/auth';
+import { METHODS, METHOD_LABEL, STATE_BADGE, STATE_LABEL, addressSortKey, duesState, isIsoDate, parseAmount, samplePayment, todayEastern, type Method } from '~/lib/dues';
+import { toCsv } from '~/lib/forms/schema';
+import { fmtDate, fmtMoney, withFlash } from '~/lib/format';
+import { audit, createServiceClient } from '~/lib/supabase';
+
+const db = Astro.locals.supabase;
+const me = Astro.locals.profile!;
+const admin = isAdmin(me);
+const today = todayEastern();
+const SHOW = ['all', 'unpaid', 'paid'] as const;
+type Show = (typeof SHOW)[number];
+const asShow = (s: string | null): Show => (SHOW.includes(s as Show) ? (s as Show) : 'all');
+const asYear = (s: string | null): number | null => (s && /^\d{4}$/.test(s) && Number(s) >= 2000 && Number(s) <= 2100 ? Number(s) : null);
+const day = (iso: string) => fmtDate(`${iso}T12:00:00Z`, { dateStyle: 'medium', timeZone: 'UTC' });
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = String(form.get('action') ?? '');
+  const year = asYear(String(form.get('year') ?? ''));
+  const show = asShow(String(form.get('show') ?? ''));
+  const back = (kind: 'ok' | 'error', message: string, y: number | null = year) =>
+    Astro.redirect(withFlash(`/admin/dues?${new URLSearchParams({ ...(y ? { year: String(y) } : {}), ...(show !== 'all' ? { show } : {}) })}`, kind, message), 303);
+  const id = String(form.get('id') ?? '');
+  const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+
+  if (action === 'open_year') {
+    const dueDate = String(form.get('due_date') ?? '');
+    const rateHome = parseAmount(String(form.get('rate_home') ?? ''));
+    const rateLot = parseAmount(String(form.get('rate_lot') ?? ''));
+    const sample = form.get('sample') === '1';
+    if (!year) return back('error', 'Enter a four-digit year.', null);
+    if (!isIsoDate(dueDate)) return back('error', 'Enter a valid due date.', null);
+    if (rateHome === null || rateLot === null) return back('error', 'Enter the dues amounts as plain dollar figures.', null);
+    const { error: periodError } = await db.from('dues_periods').insert({ year, due_date: dueDate, is_sample: sample, created_by: me.id });
+    if (periodError) return back('error', periodError.code === '23505' ? `${year} is already open.` : 'Could not open that year.', null);
+    const { data: lots } = await db.from('lots').select('id,improved').eq('kind', 'lot');
+    const rows = (lots ?? []).map((l) => {
+      const paid = sample ? samplePayment(year, dueDate, today) : null;
+      return { year, lot_id: l.id, amount: l.improved ? rateHome : rateLot, ...(paid ? { ...paid, recorded_by: me.id } : {}) };
+    });
+    // PostgREST needs every row in a bulk insert to carry the same keys.
+    const filled = rows.map((r) => ({ paid_on: null, method: null, reference: null, recorded_by: null, ...r }));
+    const { error: rowsError } = filled.length ? await db.from('dues').insert(filled) : { error: null };
+    if (rowsError) {
+      await createServiceClient().from('dues_periods').delete().eq('year', year);
+      console.error('open dues year', rowsError.message);
+      return back('error', 'Could not create the lot list for that year.', null);
+    }
+    await audit(me.id, 'dues_year_opened', 'dues_period', String(year), { lots: filled.length, sample });
+    return back('ok', `${year} dues opened for ${filled.length} lots.`);
+  }
+
+  if (action === 'delete_year') {
+    if (!admin) return back('error', 'Only an administrator can delete a dues year.');
+    if (!year || form.get('confirm') !== '1') return back('error', 'Tick the box to confirm.');
+    const { error } = await db.from('dues_periods').delete().eq('year', year);
+    if (error) return back('error', 'Could not delete that year.');
+    await audit(me.id, 'dues_year_deleted', 'dues_period', String(year));
+    return back('ok', `${year} dues deleted.`, null);
+  }
+
+  if (!validId) return back('error', 'That record was not found.');
+
+  if (action === 'pay') {
+    const paidOn = String(form.get('paid_on') ?? '');
+    const method = String(form.get('method') ?? '') as Method;
+    const reference = String(form.get('reference') ?? '').trim().slice(0, 60) || null;
+    if (!isIsoDate(paidOn) || paidOn > today) return back('error', 'Enter the date the payment was received (today or earlier).');
+    if (!METHODS.includes(method)) return back('error', 'Choose how the payment was made.');
+    const { data, error } = await db.from('dues').update({ paid_on: paidOn, method, reference, recorded_by: me.id }).eq('id', id).select('lot_id,year').maybeSingle();
+    if (error || !data) return back('error', 'Could not record that payment.');
+    await audit(me.id, 'dues_paid', 'dues', id, { lot: data.lot_id, year: data.year, method });
+    return back('ok', 'Payment recorded.');
+  }
+
+  if (action === 'unpay') {
+    const { data, error } = await db.from('dues').update({ paid_on: null, method: null, reference: null, recorded_by: me.id }).eq('id', id).select('lot_id,year').maybeSingle();
+    if (error || !data) return back('error', 'Could not update that record.');
+    await audit(me.id, 'dues_payment_removed', 'dues', id, { lot: data.lot_id, year: data.year });
+    return back('ok', 'Payment removed. The lot shows as unpaid again.');
+  }
+
+  if (action === 'amount') {
+    const amount = parseAmount(String(form.get('amount') ?? ''));
+    if (amount === null) return back('error', 'Enter the amount as a plain dollar figure.');
+    const { data, error } = await db.from('dues').update({ amount }).eq('id', id).select('lot_id,year').maybeSingle();
+    if (error || !data) return back('error', 'Could not change that amount.');
+    await audit(me.id, 'dues_amount_changed', 'dues', id, { lot: data.lot_id, year: data.year, amount });
+    return back('ok', 'Amount updated.');
+  }
+
+  return back('error', 'Unknown action.');
+}
+
+const { data: periodRows } = await db.from('dues_periods').select('year,due_date,is_sample').order('year', { ascending: false });
+const periods = periodRows ?? [];
+const year = asYear(Astro.url.searchParams.get('year')) ?? periods[0]?.year ?? null;
+const period = periods.find((p) => p.year === year) ?? null;
+const show = asShow(Astro.url.searchParams.get('show'));
+const q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 60);
+const editParam = Astro.url.searchParams.get('edit') ?? '';
+const editId = /^[0-9a-f-]{36}$/.test(editParam) ? editParam : '';
+
+type Row = { id: string; lot_id: string; amount: number; paid_on: string | null; method: Method | null; reference: string | null; address: string | null; label: string; section: string | null; owners: string; state: ReturnType<typeof duesState>; sort: string };
+let all: Row[] = [];
+if (period) {
+  const [dues, facts] = await Promise.all([
+    db.from('dues').select('id,lot_id,amount,paid_on,method,reference,lots(address,label,section)').eq('year', period.year).limit(2000),
+    db.from('lot_facts').select('lot_id,owner_names').limit(2000),
+  ]);
+  const owners = new Map((facts.data ?? []).map((f) => [f.lot_id as string, ((f.owner_names as string[]) ?? []).join('; ')]));
+  all = (dues.data ?? []).map((d) => {
+    const lot = (Array.isArray(d.lots) ? d.lots[0] : d.lots) as { address: string | null; label: string; section: string | null } | null;
+    return {
+      id: d.id as string, lot_id: d.lot_id as string, amount: Number(d.amount), paid_on: d.paid_on as string | null, method: d.method as Method | null, reference: d.reference as string | null,
+      address: lot?.address ?? null, label: lot?.label ?? d.lot_id, section: lot?.section ?? null, owners: owners.get(d.lot_id as string) ?? '',
+      state: duesState(d.paid_on as string | null, period.due_date, today), sort: addressSortKey(lot?.address ?? null, lot?.section ?? null, lot?.label ?? ''),
+    };
+  }).sort((a, b) => a.sort.localeCompare(b.sort, 'en', { numeric: true }));
+}
+const paid = all.filter((r) => r.state === 'paid');
+const unpaid = all.filter((r) => r.state !== 'paid');
+const sum = (rows: Row[]) => rows.reduce((t, r) => t + r.amount, 0);
+const billed = sum(all), collected = sum(paid), outstanding = sum(unpaid);
+const pct = billed > 0 ? Math.round((collected / billed) * 100) : 0;
+const needle = q.toLowerCase();
+const rows = (show === 'paid' ? paid : show === 'unpaid' ? unpaid : all).filter((r) => !needle || `${r.address ?? ''} ${r.label} ${r.owners}`.toLowerCase().includes(needle));
+const pastDue = period ? today > period.due_date : false;
+
+if (period && Astro.url.searchParams.get('format') === 'csv') {
+  const csv = toCsv([
+    ['Year', 'Address', 'Section', 'Lot', 'Owner of record', 'Amount', 'Status', 'Paid on', 'Method', 'Reference'],
+    ...rows.map((r) => [period.year, r.address, r.section, r.label, r.owners, r.amount.toFixed(2), STATE_LABEL[r.state], r.paid_on, r.method ? METHOD_LABEL[r.method] : '', r.reference]),
+  ]);
+  return new Response(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="village-east-dues-${period.year}${show !== 'all' ? `-${show}` : ''}.csv"`, 'Cache-Control': 'private, no-store' } });
+}
+const link = (over: Record<string, string | null>) => {
+  const p = new URLSearchParams();
+  const merged: Record<string, string | null> = { year: year ? String(year) : null, show: show === 'all' ? null : show, q: q || null, ...over };
+  for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
+  return `/admin/dues?${p}`;
+};
+const nextYear = (periods[0]?.year ?? Number(today.slice(0, 4)) - 1) + 1;
+---
+<Shell title="Dues" area="admin">
+  <p class="eyebrow">Treasurer</p>
+  <h1>Annual dues</h1>
+  {periods.length > 0 && (
+    <nav class="segmented" aria-label="Dues year">
+      {periods.map((p) => <a href={`/admin/dues?year=${p.year}`} aria-current={p.year === year ? 'page' : undefined}>{p.year}</a>)}
+    </nav>
+  )}
+
+  {!period ? (
+    <p class="empty mt-3">No dues year has been opened yet. Open one below to start tracking payments.</p>
+  ) : (
+    <>
+      {period.is_sample && <div class="flash flash-info"><Icon name="info" size={18} /><span><strong>Sample data.</strong> The payments shown for {period.year} were invented to demonstrate this page. They are not real records of who has paid.</span></div>}
+      <div class="kpi-grid mt-2">
+        <div class="kpi"><div class="kpi-label">Collected</div><div class="kpi-value">{fmtMoney(collected)}</div><div class="small muted">of {fmtMoney(billed)} billed</div></div>
+        <div class="kpi"><div class="kpi-label">Lots paid</div><div class="kpi-value">{paid.length} <span class="small muted">of {all.length}</span></div><div class="small muted">{pct}% of dues by value</div></div>
+        <div class="kpi"><div class="kpi-label">Outstanding</div><div class="kpi-value">{fmtMoney(outstanding)}</div><div class="small muted">{unpaid.length} {unpaid.length === 1 ? 'lot' : 'lots'} unpaid</div></div>
+        <div class="kpi"><div class="kpi-label">Due date</div><div class="kpi-value kpi-value-sm">{day(period.due_date)}</div><div class="small muted">{pastDue ? 'Unpaid lots are now past due' : 'Not yet past due'}</div></div>
+      </div>
+      <progress class="meter mt-2" max={Math.max(billed, 1)} value={collected} aria-label={`${pct}% of ${period.year} dues collected`}></progress>
+
+      <div class="spread mt-3">
+        <nav class="segmented" aria-label="Filter">
+          <a href={link({ show: null })} aria-current={show === 'all' ? 'page' : undefined}>All ({all.length})</a>
+          <a href={link({ show: 'unpaid' })} aria-current={show === 'unpaid' ? 'page' : undefined}>Unpaid ({unpaid.length})</a>
+          <a href={link({ show: 'paid' })} aria-current={show === 'paid' ? 'page' : undefined}>Paid ({paid.length})</a>
+        </nav>
+        <div class="row">
+          <form method="get" class="row" role="search">
+            <input type="hidden" name="year" value={period.year} />
+            {show !== 'all' && <input type="hidden" name="show" value={show} />}
+            <input type="search" name="q" value={q} placeholder="Address or owner" aria-label="Search by address or owner" maxlength="60" class="dues-search" />
+            <button class="btn btn-ghost btn-sm" type="submit"><Icon name="search" size={16} /> Search</button>
+          </form>
+          <a class="btn btn-ghost btn-sm" href={link({ format: 'csv' })}><Icon name="download" size={16} /> Export CSV</a>
+        </div>
+      </div>
+
+      {rows.length === 0 ? <p class="empty mt-2">{q ? 'No lots match that search.' : show === 'unpaid' ? 'Every lot has paid.' : 'Nothing to show.'}</p> : (
+        <div class="table-wrap mt-2"><table class="table table-compact">
+          <thead><tr><th>Property</th><th>Owner of record</th><th class="num">Amount</th><th>Status</th><th>Payment</th><th aria-label="Actions"></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (<>
+              <tr id={`lot-${r.lot_id}`} class:list={[r.id === editId && 'is-editing']}>
+                <td class="nowrap"><strong>{r.address ?? r.label}</strong><div class="small muted">Section {r.section}, {r.label}</div></td>
+                <td class="small">{r.owners || <span class="muted">Not on file</span>}</td>
+                <td class="num">{fmtMoney(r.amount)}</td>
+                <td><span class:list={['badge', STATE_BADGE[r.state]]}>{STATE_LABEL[r.state]}</span></td>
+                <td class="small nowrap">{r.paid_on ? <>{day(r.paid_on)}<div class="muted">{r.method ? METHOD_LABEL[r.method] : ''}{r.reference ? ` ${r.reference}` : ''}</div></> : <span class="muted">None recorded</span>}</td>
+                <td class="num"><a class="btn btn-ghost btn-sm" href={r.id === editId ? link({ edit: null }) : `${link({ edit: r.id })}#lot-${r.lot_id}`}>{r.id === editId ? 'Close' : r.paid_on ? 'Edit' : 'Record payment'}</a></td>
+              </tr>
+              {r.id === editId && (
+                <tr class="row-edit">
+                  <td colspan="6">
+                    <form method="post" class="row-edit-form">
+                      <input type="hidden" name="action" value="pay" /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="year" value={period.year} /><input type="hidden" name="show" value={show} />
+                      <div class="field"><label for="paid_on">Received on</label><input id="paid_on" type="date" name="paid_on" required max={today} value={r.paid_on ?? today} /></div>
+                      <div class="field"><label for="method">Method</label><select id="method" name="method">{METHODS.map((m) => <option value={m} selected={m === (r.method ?? 'check')}>{METHOD_LABEL[m]}</option>)}</select></div>
+                      <div class="field"><label for="reference">Check number or reference</label><input id="reference" type="text" name="reference" maxlength="60" value={r.reference ?? ''} /></div>
+                      <button class="btn btn-primary" type="submit">{r.paid_on ? 'Save payment' : 'Mark as paid'}</button>
+                    </form>
+                    {r.paid_on ? (
+                      <form method="post" class="row-edit-form">
+                        <input type="hidden" name="action" value="unpay" /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="year" value={period.year} /><input type="hidden" name="show" value={show} />
+                        <button class="btn btn-danger btn-sm" type="submit">Remove this payment</button>
+                        <span class="small muted">Sets the lot back to unpaid.</span>
+                      </form>
+                    ) : (
+                      <form method="post" class="row-edit-form">
+                        <input type="hidden" name="action" value="amount" /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="year" value={period.year} /><input type="hidden" name="show" value={show} />
+                        <div class="field"><label for="amount">Amount billed</label><input id="amount" type="text" inputmode="decimal" name="amount" required maxlength="10" value={r.amount.toFixed(2)} /></div>
+                        <button class="btn btn-ghost" type="submit">Change amount</button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </>))}
+          </tbody>
+        </table></div>
+      )}
+      <p class="small muted mt-2">Owners see only their own lot's status in the member area. Payments are recorded here by hand; nothing is collected online.</p>
+    </>
+  )}
+
+  <details class="card mt-3">
+    <summary><strong>Open a dues year</strong></summary>
+    <form method="post" class="form mt-2">
+      <input type="hidden" name="action" value="open_year" />
+      <div class="grid grid-4">
+        <div class="field"><label for="year">Year</label><input id="year" name="year" type="number" min="2000" max="2100" required value={nextYear} /></div>
+        <div class="field"><label for="due_date">Due date</label><input id="due_date" name="due_date" type="date" required /></div>
+        <div class="field"><label for="rate_home">Lots with a home</label><input id="rate_home" name="rate_home" type="text" inputmode="decimal" required value="550" /></div>
+        <div class="field"><label for="rate_lot">Unimproved lots</label><input id="rate_lot" name="rate_lot" type="text" inputmode="decimal" required value="400" /></div>
+      </div>
+      <p class="help">Every lot gets a row at one of these two amounts. Adjust individual lots afterwards, for example lots the association mows.</p>
+      <label class="row"><input type="checkbox" name="sample" value="1" /> <span>Fill with invented sample payments (for demonstrations only; the year is labelled as sample data)</span></label>
+      <div><button class="btn btn-primary" type="submit">Open year</button></div>
+    </form>
+  </details>
+
+  {admin && period && (
+    <details class="card mt-2">
+      <summary><strong>Delete {period.year}</strong></summary>
+      <form method="post" class="form mt-2">
+        <input type="hidden" name="action" value="delete_year" /><input type="hidden" name="year" value={period.year} />
+        <label class="row"><input type="checkbox" name="confirm" value="1" required /> <span>Delete the {period.year} dues year and all {all.length} payment records in it. This cannot be undone.</span></label>
+        <div><button class="btn btn-danger" type="submit">Delete year</button></div>
+      </form>
+    </details>
+  )}
+</Shell>

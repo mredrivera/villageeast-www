@@ -116,6 +116,17 @@ small, .small { font-size: 0.875rem; }
   .nav-details .main-nav a { padding: 12px; font-size: 1rem; }
   .brand-sub { display: none; }
 }
+@media (max-width: 480px) {
+  /* Signed-in staff get two buttons plus the menu: tighten everything so the row still fits a phone. */
+  .site-header .wrap { gap: 8px; flex-wrap: wrap; padding-block: 6px; }
+  .brand { gap: 8px; }
+  .brand-mark { width: 32px; height: 32px; }
+  .brand-name { font-size: 1.1rem; }
+  .header-cta .btn { padding: 6px 9px; }
+  .header-cta .btn .icon { display: none; }
+  .nav-toggle { padding: 8px 9px; }
+  .nav-toggle-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 
 /* ---------- Buttons ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 10px; border: 1px solid transparent; font: inherit; font-weight: 600; font-size: 0.95rem; text-decoration: none; cursor: pointer; line-height: 1.2; transition: background 0.15s, box-shadow 0.15s, transform 0.05s; white-space: nowrap; }
@@ -256,7 +267,7 @@ fieldset.field { border: 0; margin: 0; padding: 0; min-width: 0; }
 .side-nav a[aria-current='page'] { background: var(--lake-700); color: #fff; }
 .shell-main > h1 { font-size: clamp(1.7rem, 3vw, 2.2rem); }
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
   .side-nav { position: static; padding: 6px; overflow-x: auto; }
   .side-nav h2 { display: none; }
   .side-nav ul { display: flex; gap: 4px; }
@@ -281,6 +292,25 @@ fieldset.field { border: 0; margin: 0; padding: 0; min-width: 0; }
 .up { color: var(--pine-600); } .down { color: var(--berry-600); }
 .segmented { display: inline-flex; background: var(--sand-100); border: 1px solid var(--sand-200); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
 .segmented button { font: inherit; font-size: 0.88rem; font-weight: 600; border: 0; background: transparent; color: var(--ink-soft); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.segmented a { font-size: 0.88rem; font-weight: 600; color: var(--ink-soft); padding: 6px 12px; border-radius: 8px; text-decoration: none; }
+.segmented a[aria-current='page'] { background: #fff; color: var(--lake-800); box-shadow: var(--shadow-sm); }
+.meter { display: block; width: 100%; height: 12px; border: 0; border-radius: 999px; overflow: hidden; background: var(--sand-200); accent-color: var(--pine-600); appearance: none; -webkit-appearance: none; }
+.meter::-webkit-progress-bar { background: var(--sand-200); }
+.meter::-webkit-progress-value { background: var(--pine-600); border-radius: 999px; }
+.meter::-moz-progress-bar { background: var(--pine-600); border-radius: 999px; }
+.table tr.is-editing > td { background: var(--lake-50); border-bottom-color: transparent; }
+.table tr.row-edit > td { background: var(--lake-50); padding: 4px 14px 16px; }
+.table tbody tr.row-edit:hover { background: transparent; }
+.row-edit-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 12px; }
+.row-edit-form .field { flex: 1 1 150px; max-width: 240px; }
+.nowrap { white-space: nowrap; }
+.dues-search { max-width: 200px; }
+.kpi-value-sm { font-size: 1.35rem; }
+details.card > summary { cursor: pointer; }
+.dues-card { border-left: 5px solid var(--line); }
+.dues-card.is-paid { border-left-color: var(--pine-600); }
+.dues-card.is-due { border-left-color: var(--sunset-500); }
+.dues-card.is-overdue { border-left-color: var(--berry-600); }
 .segmented button[aria-pressed='true'] { background: #fff; color: var(--lake-800); box-shadow: var(--shadow-sm); }
 
 /* ---------- Timeline ---------- */

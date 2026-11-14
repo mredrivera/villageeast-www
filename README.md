@@ -16,6 +16,7 @@ Virginia), built as a demonstration at `villageeast.toston.io`. It is not the of
 | Records | Owners | Minutes and agendas as a meeting timeline, newsletters back to 2013, board rosters, notices |
 | Surveys | Owners | The paper Social Club survey as an online form; results tallied live, CSV export |
 | Voting | Owners | Secret ballots, one vote per lot, results published when voting closes |
+| Dues | Owners / board | Each owner sees whether their own lot's annual dues are recorded as paid, with a reminder when they are not; board members see every lot, record payments and export the list |
 | Requests | Owners | Architectural review, boat/trailer storage, deer-culling permission, report a concern: with attachments, status tracking and email notices |
 | Directory | Owners | Opt-in only; each owner chooses what to share |
 | Admin | Board / admin | Approve accounts, review requests, build surveys and ballots, post news and events, manage documents, audit log |
