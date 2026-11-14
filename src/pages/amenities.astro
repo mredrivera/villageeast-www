@@ -4,14 +4,15 @@ import Icon from '~/components/Icon.astro';
 import facts from '~/data/community-facts.json';
 import { site } from '~/data/site';
 const items = [
-  { icon: 'pool', title: 'Swimming pool', text: 'The community pool is open through the summer season and looked after by a pool caretaker. Pool rules are in the Facility Rules and Requirements.' },
-  { icon: 'home', title: 'Clubhouse', text: 'The pool clubhouse at 402 Indian Ridge Drive hosts the annual membership meeting, potlucks and Social Club events.' },
-  { icon: 'court', title: 'Activity courts', text: 'Tennis, pickleball and basketball on the resurfaced multi-purpose court.' },
-  { icon: 'ramp', title: 'Private gated boat ramp', text: 'Launch from our own paved ramp with a gated entrance for owners.' },
-  { icon: 'boat', title: 'Day dock', text: 'Tie up at the community day dock on the Roanoke River channel near marker R26.' },
-  { icon: 'grid', title: 'Boat & trailer storage', text: 'Two storage lots for owners. Apply online and the Grounds Committee will assign a space.' },
-  { icon: 'road', title: 'Private roads', text: 'The association maintains all subdivision roads, including paving, patching and snow removal.' },
-  { icon: 'sun', title: 'Green belt', text: 'Shared green belt parcels preserve trees and open space throughout the community.' },
+  { icon: 'pool', title: 'Swimming pool', photo: '/photos/pool.jpg', text: 'The community pool is open through the summer season and looked after by a pool caretaker. Pool rules are in the Facility Rules and Requirements.' },
+  { icon: 'home', title: 'Clubhouse', photo: '/photos/clubhouse.jpg', text: 'The pool clubhouse at 402 Indian Ridge Drive hosts the annual membership meeting, potlucks and Social Club events.' },
+  { icon: 'court', title: 'Activity courts', photo: '/photos/courts.jpg', text: 'Tennis, pickleball and basketball on the resurfaced multi-purpose court.' },
+  { icon: 'ramp', title: 'Private gated boat ramp', photo: '/photos/ramp.jpg', text: 'Launch from our own paved ramp with a gated entrance for owners.' },
+  { icon: 'boat', title: 'Day dock', photo: '/photos/dock.jpg', text: 'Tie up at the community day dock on the Roanoke River channel near marker R26.' },
+  { icon: 'grid', title: 'Boat & trailer storage', photo: '/photos/storage.jpg', text: 'Two storage lots for owners. Apply online and the Grounds Committee will assign a space.' },
+  { icon: 'road', title: 'Private roads', photo: '/photos/entrance.jpg', text: 'The association maintains all subdivision roads, including paving, patching and snow removal.' },
+  { icon: 'sun', title: 'Green belt', photo: '/photos/greenbelt.jpg', text: 'Shared green belt parcels preserve trees and open space throughout the community.' },
+  { icon: 'boat', title: 'On the lake', photo: '/photos/lake.jpg', text: 'Village East sits on the Roanoke River channel of Smith Mountain Lake, on the Bedford County shore.' },
 ];
 const civic = [
   { icon: 'fire', label: 'Fire district', value: facts.fireDistrict ? `${facts.fireDistrict.NAME} (${facts.fireDistrict.CompanyNumber})` : null },
@@ -30,8 +31,8 @@ const civic = [
     <p class="lead">Owners share a pool and clubhouse, courts, a private gated boat ramp with a day dock, and two boat trailer storage lots.</p>
   </div></div>
   <section class="section-tight"><div class="wrap">
-    <div class="grid grid-4">
-      {items.map((a) => (<div class="card"><div class="card-icon"><Icon name={a.icon} size={22} /></div><h3>{a.title}</h3><p class="small muted">{a.text}</p></div>))}
+    <div class="grid grid-3">
+      {items.map((a) => (<div class="card card-media"><img class="card-photo" src={a.photo} alt={`${a.title} at Village East`} width="800" height="600" loading="lazy" decoding="async" /><div class="card-body"><h3><Icon name={a.icon} size={18} /> {a.title}</h3><p class="small muted">{a.text}</p></div></div>))}
     </div>
     <div class="row mt-3">
       <a class="btn btn-primary" href="/map"><Icon name="map" size={18} /> Find them on the map</a>

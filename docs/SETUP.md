@@ -173,9 +173,10 @@ years), **Voting** (cast the demo ballot), **My requests > Architectural review 
 
 ## 7. Optional extras
 
-- **Photos.** On your own computer run `bash scripts/fetch-legacy-photos.sh`. It saves the old site's
-  images to `public/photos/legacy/`. Copy a wide one to `public/photos/hero.jpg`, set
-  `heroPhoto: '/photos/hero.jpg'` in `src/data/site.ts`, commit and redeploy.
+- **Photos.** `bash scripts/fetch-legacy-photos.sh` saves the old site's original images to
+  `content/photos/legacy/` (kept in the repository, not deployed). The site uses web-sized copies in
+  `public/photos/` (`hero.jpg` plus one per amenity). To swap one, export a JPEG about 800 px wide
+  (1800 px for the hero) over the file of the same name, commit and redeploy.
 - **Automatic deploys.** Cloudflare dashboard > Workers > `villageeast-www` > Settings > **Builds** >
   connect the GitHub repository, with build command `npm run build` and deploy command
   `npx wrangler deploy`. Every push to the main branch then deploys itself.

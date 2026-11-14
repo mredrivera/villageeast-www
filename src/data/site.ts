@@ -9,7 +9,7 @@ export const site = {
   byLake: 'Roanoke River channel, marker R26 (Bedford County side)',
   byLand: 'Off Hickory Cove Road, Moneta, VA 24121',
   /** Set to a file in /public/photos (see scripts/fetch-legacy-photos.sh) to replace the illustrated hero. */
-  heroPhoto: null as string | null,
+  heroPhoto: '/photos/hero.jpg' as string | null,
   demoNotice: true,
 };
 

@@ -86,6 +86,5 @@ governing documents, rules, paper forms and realtor documents stay public.
 
 - The map has no aerial photo layer (the county publishes none openly).
 - County records merge some lots, so the map shows 169 lots where the association counts 181.
-- The hero image is an illustration until real photos are added (see setup guide, step 7).
 - Online ballots are a demonstration. Before using them for a binding vote, the board should confirm
   that the by-laws permit electronic voting.

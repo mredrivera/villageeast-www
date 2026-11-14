@@ -4,14 +4,14 @@
 #
 #   bash scripts/fetch-legacy-photos.sh
 #
-# Photos are saved to public/photos/legacy/. Review them, then:
+# Photos are saved to content/photos/legacy/ (originals, not deployed). Review them, then:
 #   - copy your favourite wide photo to public/photos/hero.jpg and set
 #     heroPhoto: '/photos/hero.jpg' in src/data/site.ts
 #   - commit the folder so the new site can use them.
 set -euo pipefail
 
 SITE="https://villageeast.org"
-OUT="$(cd "$(dirname "$0")/.." && pwd)/public/photos/legacy"
+OUT="$(cd "$(dirname "$0")/.." && pwd)/content/photos/legacy"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 PAGES=(home documents-2 financials newsletter vepoa-board meetings agendas%2Fminutes service-opportunities contact real-estate-documents archives)
 

@@ -142,6 +142,13 @@ small, .small { font-size: 0.875rem; }
 .card-link:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-color: var(--lake-300); color: inherit; }
 .card-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--lake-100); color: var(--lake-700); display: grid; place-items: center; margin-bottom: 14px; }
 .card h3 { margin-bottom: 0.35em; }
+.card-media { padding: 0; overflow: hidden; }
+.card-photo { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; background: var(--lake-100); }
+.card-body { padding: clamp(16px, 2vw, 22px); }
+.card-body > :last-child { margin-bottom: 0; }
+.card-body h3 { display: flex; align-items: center; gap: 8px; }
+.card-body h3 svg { color: var(--lake-700); flex: none; }
+.photo-frame { display: block; width: 100%; height: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
 .panel { background: var(--lake-50); border: 1px solid var(--lake-100); border-radius: var(--radius); padding: 18px 20px; }
 .band { background: var(--lake-900); color: #dcebee; }
 .band h2, .band h3 { color: #fff; }
