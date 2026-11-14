@@ -127,7 +127,9 @@ function centroid(geom) {
 async function main() {
   console.log('Fetching Village East parcels…');
   const raw = await query(LAYERS.parcels, {
-    where: "Legal1 LIKE '%VILLAGE EAST%' OR legal_desc LIKE '%VILLAGE EAST%'",
+    // Section 4 of tax map 241B (113-120 Wagon Wheel Trail) is recorded by the county as "Crown Point"
+    // rather than "Village East", so it is matched by map number instead of by name.
+    where: "Legal1 LIKE '%VILLAGE EAST%' OR legal_desc LIKE '%VILLAGE EAST%' OR (MapLink LIKE '241B-4-%' AND Legal1 LIKE 'CROWN POINT%')",
   });
   if (raw.length < 150) throw new Error(`Expected ~186 parcels, got ${raw.length}; aborting.`);
 

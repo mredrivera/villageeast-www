@@ -86,6 +86,6 @@ governing documents, rules, paper forms and realtor documents stay public.
 ## Known limits of the demo
 
 - The map has no aerial photo layer (the county publishes none openly).
-- County records merge some lots, so the map shows 169 lots where the association counts 181.
+- The map shows 175 lots plus 6 common parcels (181 county parcels). Six of the lots, 113-120 Wagon Wheel Trail, are recorded by the county as "Crown Point" (tax map 241B section 4) and are included on that basis.
 - Online ballots are a demonstration. Before using them for a binding vote, the board should confirm
   that the by-laws permit electronic voting.
