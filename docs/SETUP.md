@@ -184,7 +184,8 @@ years), **Voting** (cast the demo ballot), the dues reminder on the member overv
 - **Keep the free database awake.** Supabase pauses free projects after about a week of inactivity.
   `.github/workflows/keepalive.yml` loads a page twice a week to prevent that; it starts working once
   this branch is merged into the default branch.
-- **Adding people for the demo.** Admin > Members > Add a member creates the account. To let them
+- **Adding people for the demo.** Admin > Members > Add a member creates the account. From the
+  command line: `node scripts/add-member.mjs --email jane@example.com --name "Jane Doe" --lot s1-15`. To let them
   receive sign-in codes, nothing else is needed (codes are sent by Supabase). To let them receive
   notification emails as well, add their address to `MAIL_ALLOWLIST` in `wrangler.jsonc` and redeploy.
 
