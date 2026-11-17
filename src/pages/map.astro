@@ -30,13 +30,41 @@ const civic = [
           </div>
           <div id="map" data-member={member ? '1' : '0'} data-bounds={JSON.stringify(facts.bounds)} role="application" aria-label="Map of Village East lots"></div>
         </div>
-        <div class="map-legend" aria-label="Legend">
+        {member && (
+          <div class="row mt-2" style="justify-content:space-between">
+            <div class="segmented" role="group" aria-label="Color lots by" id="map-view">
+              <button type="button" data-view="lots" aria-pressed="true">Lot type</button>
+              <button type="button" data-view="sales" aria-pressed="false">Last sale</button>
+              <button type="button" data-view="idle" aria-pressed="false">Vacant lots by years held</button>
+            </div>
+            <a class="small" href="/members/real-estate">Real estate trends &rarr;</a>
+          </div>
+        )}
+        <div class="map-legend" aria-label="Legend" data-legend="lots">
           <span><i class="swatch swatch-home"></i>Lot with home</span>
           <span><i class="swatch swatch-vacant"></i>Undeveloped lot</span>
           <span><i class="swatch swatch-common"></i>Green belt &amp; common area</span>
           <span><i class="swatch swatch-rec"></i>Pool &amp; recreation area</span>
           <span><i class="swatch swatch-water"></i>Smith Mountain Lake</span>
         </div>
+        {member && (
+          <>
+            <div class="map-legend" aria-label="Legend: last market sale" data-legend="sales" hidden>
+              <span><i class="swatch" style="background:#1f5fb8"></i>2022 or later</span>
+              <span><i class="swatch" style="background:#5b93d9"></i>2018-2021</span>
+              <span><i class="swatch" style="background:#9fc0e8"></i>2010-2017</span>
+              <span><i class="swatch" style="background:#d6e4f3"></i>Before 2010</span>
+              <span><i class="swatch" style="background:#eceeed"></i>No priced sale on record</span>
+            </div>
+            <div class="map-legend" aria-label="Legend: vacant lots by years held" data-legend="idle" hidden>
+              <span><i class="swatch" style="background:#9c3f12"></i>30+ years</span>
+              <span><i class="swatch" style="background:#d9692f"></i>20-30 years</span>
+              <span><i class="swatch" style="background:#f0a274"></i>10-20 years</span>
+              <span><i class="swatch" style="background:#f8d3b8"></i>Under 10 years</span>
+              <span><i class="swatch" style="background:#eceeed"></i>Lot with home</span>
+            </div>
+          </>
+        )}
       </div>
       <aside class="stack" aria-live="polite">
         <div class="card" id="lot-panel">
@@ -53,7 +81,7 @@ const civic = [
         </div>
       </aside>
     </div>
-    <p class="small muted mt-2">Source: {facts.source}, retrieved {facts.generatedAt}. For reference only; not a survey. Owner mailing addresses, sale prices and assessments are intentionally not shown.</p>
+    <p class="small muted mt-2">Source: {facts.source}, retrieved {facts.generatedAt}. For reference only; not a survey. Owner mailing addresses are never shown; owners of record, sale prices and assessments are visible only to signed-in owners.</p>
   </div></section>
 </Base>
 <script>

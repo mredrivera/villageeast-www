@@ -3,7 +3,7 @@
  * Loads the starting content into a Supabase project. Safe to re-run (everything is an upsert).
  *
  *   1. lots                 from public/data/map/parcels.geojson
- *   2. lot_facts            from supabase/seed/generated/lot_facts.json (run `npm run gis:sync` first)
+ *   2. lot_facts, lot_sales, lot_assessments  from supabase/seed/generated/ (run `npm run gis:sync` first)
  *   3. documents + files    from content/documents (uploaded to the private `documents` bucket)
  *   4. events, announcements, the Social Club survey and a demonstration ballot
  *   5. the first administrator account
@@ -11,6 +11,7 @@
  * Required environment (or put them in .dev.vars / .env.seed):
  *   SUPABASE_URL, SUPABASE_SECRET_KEY, ADMIN_EMAIL
  * Optional: ADMIN_NAME, ADMIN_LOT (lot id such as "s2-26"), SKIP_FILES=1
+ * Pass --county-only to refresh only county data (lots, owner facts, sales, assessments).
  */
 import { createClient } from '@supabase/supabase-js';
 import { existsSync, readFileSync } from 'node:fs';
@@ -48,7 +49,7 @@ function isDst(date) { // US Eastern daylight time: second Sunday of March to fi
 
 async function seedLots() {
   const { features } = read('public/data/map/parcels.geojson');
-  const rows = features.map(({ properties: p }) => ({ id: p.id, kind: p.kind, label: p.label, lot: p.lot, section: p.section, address: p.address, acres: p.acres, improved: p.improved }));
+  const rows = features.map(({ properties: p }) => ({ id: p.id, kind: p.kind, label: p.label, lot: p.lot, section: p.section, address: p.address, acres: p.acres, improved: p.improved, waterfront: !!p.waterfront }));
   must(await db.from('lots').upsert(rows), 'lots');
   console.log(`lots: ${rows.length}`);
   const factsPath = 'supabase/seed/generated/lot_facts.json';
@@ -57,6 +58,16 @@ async function seedLots() {
   const facts = read(factsPath).filter((f) => ids.has(f.lot_id));
   must(await db.from('lot_facts').upsert(facts), 'lot_facts');
   console.log(`lot_facts: ${facts.length}`);
+
+  // Sales and assessments are replaced wholesale on every sync so corrections at the county flow through.
+  for (const [table, file] of [['lot_sales', 'lot_sales.json'], ['lot_assessments', 'lot_assessments.json']]) {
+    const path = `supabase/seed/generated/${file}`;
+    if (!existsSync(resolve(ROOT, path))) { console.warn(`${table}: skipped (run \`npm run gis:sync\`)`); continue; }
+    const rows = read(path).filter((r) => ids.has(r.lot_id));
+    must(await db.from(table).delete().in('lot_id', [...ids]), `${table} clear`);
+    for (let i = 0; i < rows.length; i += 500) must(await db.from(table).insert(rows.slice(i, i + 500)), table);
+    console.log(`${table}: ${rows.length}`);
+  }
 }
 
 async function seedDocuments() {
@@ -171,12 +182,16 @@ async function seedAdmin() {
   console.log('admin: administrator account created (sign in with a one-time email code)');
 }
 
+// `--county-only` refreshes lots, owner facts, sales and assessments and nothing else (for routine updates).
+const countyOnly = process.argv.includes('--county-only');
 try {
   await seedLots();
-  await seedDocuments();
-  await seedContent();
-  await seedAdmin();
-  console.log('Seed complete.');
+  if (!countyOnly) {
+    await seedDocuments();
+    await seedContent();
+    await seedAdmin();
+  }
+  console.log(countyOnly ? 'County data refreshed.' : 'Seed complete.');
 } catch (err) {
   console.error(err.message);
   process.exit(1);

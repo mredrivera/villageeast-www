@@ -49,7 +49,7 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push --remote
 ```
 
-`--remote` targets the linked project (without it the CLI aims at a local database). `db push` applies the two files in `supabase/migrations/`. It should end with "Finished supabase db push".
+`--remote` targets the linked project (without it the CLI aims at a local database). `db push` applies the files in `supabase/migrations/` that the project does not have yet. It should end with "Finished supabase db push".
 
 ### 1b. Lock down sign-in
 
@@ -157,8 +157,8 @@ npm run gis:sync
 npm run seed
 ```
 
-`gis:sync` pulls current parcel data from Bedford County (owner names go to a gitignored file, never
-into the repository). `seed` uploads the 96 documents to private storage, loads lots, events, news, the
+`gis:sync` pulls current parcel data from Bedford County (owner names, sale history and assessments go
+to gitignored files, never into the repository). `seed` uploads the 96 documents to private storage, loads lots, events, news, the
 Social Club survey and a demonstration ballot, and creates your administrator account. Both are safe to
 re-run. Delete `.env.seed` afterwards if you like.
 
@@ -188,6 +188,26 @@ years), **Voting** (cast the demo ballot), the dues reminder on the member overv
   command line: `node scripts/add-member.mjs --email jane@example.com --name "Jane Doe" --lot s1-15`. To let them
   receive sign-in codes, nothing else is needed (codes are sent by Supabase). To let them receive
   notification emails as well, add their address to `MAIL_ALLOWLIST` in `wrangler.jsonc` and redeploy.
+
+## Updating an existing deployment
+
+After pulling new code that adds files to `supabase/migrations/` (for example the real estate tables),
+apply them, reload county data, then redeploy:
+
+```bash
+npx supabase db push --remote
+```
+
+```bash
+npm run gis:sync && npm run seed -- --county-only
+```
+
+```bash
+npm run deploy
+```
+
+Running the middle command monthly keeps sales and assessments current. With `--county-only` it
+replaces county data only and never touches members, documents, news, requests, ballots or dues.
 
 ## Local development
 

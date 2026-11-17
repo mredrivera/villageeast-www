@@ -1,0 +1,147 @@
+---
+import Shell from '~/layouts/Shell.astro';
+import Icon from '~/components/Icon.astro';
+import { loadReport } from '~/lib/realestate-data';
+import { fmtDate, fmtMoney } from '~/lib/format';
+
+const r = await loadReport(Astro.locals.supabase);
+const pct = (n: number, digits = 0) => `${(n * 100).toFixed(digits)}%`;
+const change = (now: number, before: number) => (before ? Math.round(((now - before) / before) * 100) : null);
+const salesChange = change(r.last12.deals, r.prior12.deals);
+const c2019 = r.cycles.find((c) => c.year === 2019)!;
+const c2023 = r.cycles.find((c) => c.year === 2023)!;
+const TYPE = { home: 'Home', new_build: 'New construction', lot: 'Lot' } as const;
+const SELLER: Record<string, string> = { company: 'Builder / company', lender: 'Lender (bank-owned)', trust_or_estate: 'Trust or estate', association: 'Association', individual: 'Owner', unknown: '' };
+
+// Members-only data travels inside this authenticated page, never in a public script bundle.
+const payload = JSON.stringify({
+  velocity: r.velocity,
+  completeFrom: r.completeFrom,
+  lots: r.totals.lots,
+  deals: r.deals.filter((d) => d.year >= 2000).map((d) => ({ date: d.date, price: d.price, type: d.type, waterfront: d.waterfront, name: d.name, sqft: d.sqft, pps: d.pricePerSqft, bundle: d.lots.length })),
+  buildOut: r.buildOut,
+  cycles: r.cycles,
+  idleBuckets: r.idleBuckets,
+}).replace(/</g, '\\u003c');
+const idleShown = r.idle.filter((x) => (x.yearsHeld ?? 99) >= 10);
+---
+<Shell title="Real estate" area="members">
+  <p class="eyebrow">Owners only &middot; from county public records</p>
+  <h1>Real estate in Village East</h1>
+  <p class="lead">Every recorded sale, every reassessment and every house built since the community began, drawn from Bedford County's property records. Updated {fmtDate(r.asOf)}.</p>
+
+  <div class="kpi-grid mt-3">
+    <div class="kpi"><div class="kpi-label">Sales, last 12 months</div><div class="kpi-value">{r.last12.deals}</div>
+      {salesChange !== null && <div class:list={['kpi-delta', salesChange >= 0 ? 'up' : 'down']}>{salesChange >= 0 ? '▲' : '▼'} {Math.abs(salesChange)}% vs prior 12 months</div>}
+      <div class="small muted">{r.last12.homes} homes, {r.last12.lots} lots &middot; {fmtMoney(r.last12.volume)} total</div></div>
+    <div class="kpi"><div class="kpi-label">Median home price, last 2 years</div><div class="kpi-value">{r.last24.medianHome ? fmtMoney(r.last24.medianHome) : '—'}</div>
+      <div class="small muted">{r.last24.medianHomePerSqft ? `${fmtMoney(r.last24.medianHomePerSqft)} per finished sq ft` : ''}</div></div>
+    <div class="kpi"><div class="kpi-label">Lots with a home</div><div class="kpi-value">{pct(r.totals.developedShare)}</div>
+      <div class="small muted">{r.totals.homes} of {r.totals.lots} lots &middot; {r.totals.vacant} still vacant</div></div>
+    <div class="kpi"><div class="kpi-label">Vacant lots unsold 20+ years</div><div class="kpi-value">{r.idleLongHeld}</div>
+      <div class="small muted">of {r.totals.vacant} vacant lots ({r.totals.vacantAcres} acres)</div></div>
+    <div class="kpi"><div class="kpi-label">Typical time between sales</div><div class="kpi-value">{r.medianHoldYears ?? '—'} yrs</div>
+      <div class="small muted">{pct(r.turnoverRate, 1)} of lots change hands each year</div></div>
+    <div class="kpi"><div class="kpi-label">Sale price vs. assessment</div><div class="kpi-value">{r.saleToAssessment ? `${r.saleToAssessment.toFixed(2)}×` : '—'}</div>
+      <div class="small muted">Median of {r.saleToAssessmentN} sales in the last 3 years</div></div>
+  </div>
+
+  <section class="card mt-3">
+    <div class="spread"><h2 class="mb-0" style="font-size:1.3rem">Two markets: on the water and off it</h2><span class="small muted">Single-lot sales, last 3 years</span></div>
+    <div class="table-wrap mt-2"><table class="table">
+      <thead><tr><th>Segment</th><th class="num">Sales</th><th class="num">Median price</th><th class="num">Range</th><th class="num">Median per unit</th></tr></thead>
+      <tbody>{r.segments.map((s) => (
+        <tr><td><strong>{s.label}</strong></td><td class="num">{s.sales}</td><td class="num">{s.median ? fmtMoney(s.median) : '—'}</td>
+          <td class="num">{s.low !== null && s.high !== null ? `${fmtMoney(s.low)} – ${fmtMoney(s.high)}` : '—'}</td>
+          <td class="num">{s.perUnit ? `${fmtMoney(s.perUnit)} / ${s.unit}` : '—'}</td></tr>
+      ))}</tbody>
+    </table></div>
+    <p class="small muted mt-2 mb-0">{r.totals.waterfront} of {r.totals.lots} lots touch the shoreline; {r.totals.vacantWaterfront} of those are still vacant. Small samples swing a lot: treat a median of 3 sales as a hint, not a price.</p>
+  </section>
+
+  <section class="card mt-3">
+    <div class="spread"><h2 class="mb-0" style="font-size:1.3rem">Sales velocity</h2><span class="small muted">Recorded market sales per year</span></div>
+    <div class="chart" id="chart-velocity" role="img" aria-label="Stacked bars of home, new construction and lot sales per year since 2000."></div>
+    <p class="small muted mb-0">Paler bars (before {r.completeFrom}) are undercounted: the county keeps only each lot's three most recent transfers, so older sales of frequently traded lots have dropped off the record. Hover a bar for how complete that year is.</p>
+  </section>
+
+  <section class="card mt-3">
+    <div class="spread"><h2 class="mb-0" style="font-size:1.3rem">Every sale since 2000</h2>
+      <span class="small muted">Price on a log scale &middot; filled = waterfront, hollow = off-water</span></div>
+    <div class="chart chart-tall" id="chart-prices" role="img" aria-label="Scatter plot of every market sale since 2000 by date and price, by property type and waterfront."></div>
+  </section>
+
+  <div class="grid grid-2 mt-3">
+    <section class="card">
+      <h2 style="font-size:1.3rem">Build-out</h2>
+      <div class="chart chart-sm" id="chart-buildout" role="img" aria-label="Cumulative number of homes built by year, against the total number of lots."></div>
+      <p class="small muted mb-0">By decade: {r.buildDecades.map((d) => `${d.decade} ${d.homes}`).join(' · ')}. Year built is from the county's building records.</p>
+    </section>
+    <section class="card">
+      <h2 style="font-size:1.3rem">Assessed value</h2>
+      <div class="chart chart-sm" id="chart-assessed" role="img" aria-label="Total assessed value of all lots at each county reassessment, land and buildings."></div>
+      <p class="small muted mb-0">Total of all {r.totals.lots} lots: {fmtMoney(c2023.total)} in 2023, up {change(c2023.total, c2019.total)}% from 2019. Median home {fmtMoney(c2023.medianHome ?? 0)}, median vacant lot {fmtMoney(c2023.medianLot ?? 0)}. Paler bars are partial: the county keeps 5 assessment records per lot.</p>
+    </section>
+  </div>
+
+  <section class="card mt-3">
+    <div class="spread"><h2 class="mb-0" style="font-size:1.3rem">Recent sales</h2><span class="small muted">Last 24 months &middot; {r.recent.length} sales</span></div>
+    <div class="table-wrap mt-2"><table class="table table-compact">
+      <thead><tr><th>Date</th><th>Property</th><th>Type</th><th class="num">Price</th><th class="num">Size</th><th class="num">Previous sale</th></tr></thead>
+      <tbody>{r.recent.map((d) => (
+        <tr>
+          <td>{fmtDate(d.date, { dateStyle: 'medium' })}</td>
+          <td><a href={`/map?lot=${d.lots[0]!.id}`}>{d.name}</a>{d.waterfront && <span class="badge" style="margin-left:6px">Waterfront</span>}{SELLER[d.sellerType] && d.sellerType !== 'individual' && <div class="small muted">Seller: {SELLER[d.sellerType]}</div>}</td>
+          <td>{TYPE[d.type]}{d.yearBuilt && d.type !== 'lot' && <div class="small muted">Built {d.yearBuilt}</div>}</td>
+          <td class="num"><strong>{fmtMoney(d.price)}</strong>{d.pricePerSqft && <div class="small muted">{fmtMoney(d.pricePerSqft)}/sq ft</div>}</td>
+          <td class="num">{d.sqft && d.type !== 'lot' ? `${d.sqft.toLocaleString('en-US')} sq ft` : d.acres ? `${d.acres} ac` : '—'}</td>
+          <td class="num">{d.prev ? <>{fmtMoney(d.prev.price)}<div class="small muted">{d.prev.date.slice(0, 4)}{d.annualGrowth !== null && <> &middot; <span class={d.annualGrowth >= 0 ? 'up' : 'down'}>{d.annualGrowth >= 0 ? '+' : ''}{d.annualGrowth}%/yr</span></>}</div></> : '—'}</td>
+        </tr>
+      ))}</tbody>
+    </table></div>
+  </section>
+
+  <div class="grid grid-2 mt-3">
+    <section class="card">
+      <h2 style="font-size:1.3rem">Vacant lots by time since last transfer</h2>
+      <div class="chart chart-sm" id="chart-idle" role="img" aria-label="Number of vacant lots grouped by years since they last changed hands."></div>
+      <p class="small muted mb-0">{r.idle.filter((x) => x.withNeighbor).length} vacant lots were last bought together with a neighboring house; they are usually side yards rather than building lots.</p>
+    </section>
+    <section class="card">
+      <h2 style="font-size:1.3rem">See it on the map</h2>
+      <p>Color every lot by when it last sold, or show which vacant lots have sat longest.</p>
+      <div class="row"><a class="btn btn-primary btn-sm" href="/map?view=sales"><Icon name="map" size={16} /> Last sale</a><a class="btn btn-ghost btn-sm" href="/map?view=idle">Vacant lots by years held</a></div>
+      <h3 class="mt-3">How to read these numbers</h3>
+      <ul class="small prose mb-0">
+        <li><strong>Market sale</strong>: a recorded deed with a price of $1,000 or more. Gifts, estate and trust transfers and corrective deeds are left out of prices and counts.</li>
+        <li><strong>Home or lot</strong> depends on whether a house stood on the lot that year; <strong>new construction</strong> is a sale by the builder within a year of completion, or a sale of $100,000 or more in the year the house was finished.</li>
+        <li>One deed covering two lots counts as one sale.</li>
+        <li>Records dated 1 January with no price come from the county's move to computer records in the 1990s; their real date is unknown, shown as "about".</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="card mt-3">
+    <div class="spread"><h2 class="mb-0" style="font-size:1.3rem">Vacant lots held 10 years or more</h2><span class="small muted">{idleShown.length} lots, longest held first</span></div>
+    <div class="table-wrap mt-2"><table class="table table-compact">
+      <thead><tr><th>Lot</th><th class="num">Acres</th><th>Held since</th><th class="num">Years</th><th class="num">Last market sale</th><th class="num">Assessed</th></tr></thead>
+      <tbody>{idleShown.map((x) => (
+        <tr>
+          <td><a href={`/map?lot=${x.id}`}>{x.name}</a>{x.waterfront && <span class="badge" style="margin-left:6px">Waterfront</span>}{x.withNeighbor && <span class="badge badge-sand" style="margin-left:6px">Side lot</span>}</td>
+          <td class="num">{x.acres ?? '—'}</td>
+          <td>{x.heldSince ? (x.heldSinceApprox ? `about ${x.heldSince.slice(0, 4)}` : fmtDate(x.heldSince, { dateStyle: 'medium' })) : 'Unknown'}</td>
+          <td class="num">{x.yearsHeld !== null ? Math.floor(x.yearsHeld) : '—'}</td>
+          <td class="num">{x.lastMarket ? <>{fmtMoney(x.lastMarket.price)}<div class="small muted">{x.lastMarket.date.slice(0, 4)}</div></> : <span class="muted">None on record</span>}</td>
+          <td class="num">{x.assessed ? fmtMoney(x.assessed) : '—'}</td>
+        </tr>
+      ))}</tbody>
+    </table></div>
+    <p class="small muted mt-2 mb-0">Names of buyers and sellers are deliberately not shown. Owners of record are on the map for signed-in owners; please keep all of this within the community.</p>
+  </section>
+
+  <p class="small muted mt-3">Source: Bedford County, VA GIS open data (parcels, real estate land records, ownership and valuations, and improvements tables). Not an appraisal; for reference only.</p>
+  <script type="application/json" id="realestate-data" set:html={payload} />
+</Shell>
+<script>
+  import '~/scripts/realestate';
+</script>

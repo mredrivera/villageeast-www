@@ -11,7 +11,8 @@ Virginia), built as a demonstration at `villageeast.toston.io`. It is not the of
 |---|---|---|
 | Public site | Everyone | Home, amenities, meeting calendar, governing documents, realtor packet, contact form |
 | Community map | Everyone | Every lot line, lot number and street address from Bedford County GIS, with search. Self-hosted: no third-party map tiles |
-| Map, owner layer | Owners | Owner of record and basic property facts (year built, size, bedrooms) |
+| Map, owner layer | Owners | Owner of record, property facts, last sale and assessment; color lots by last sale or by how long vacant lots have been held |
+| Real estate | Owners | Sales velocity since 2000, every sale on a price timeline, waterfront vs. off-water medians, build-out curve, assessed value by reassessment, recent sales with prior-sale appreciation, vacant lots by years held |
 | Financials | Owners | 2019-2025 income and spending: money-flow diagram, trends, budget vs. actual, reserve fund, line-by-line table |
 | Records | Owners | Minutes and agendas as a meeting timeline, newsletters back to 2013, board rosters, notices |
 | Surveys | Owners | The paper Social Club survey as an online form; results tallied live, CSV export |
@@ -62,9 +63,9 @@ scripts/              gis-sync (county data), seed (load a project), import-lega
 - **Web hardening.** Strict Content-Security-Policy with no inline or third-party scripts (Turnstile
   excepted), HSTS, no framing, same-origin checks on every form post, rate limiting, server-side
   validation of every field, upload type checks by file signature, and an audit log of admin actions.
-- **Privacy by design.** Owner mailing addresses, sale prices and assessed values are never collected.
-  Owner names are fetched from the county into a gitignored file and stored only in the members-only
-  table. No analytics or advertising trackers.
+- **Privacy by design.** Owner mailing addresses are never collected. Owner names, sale prices and
+  assessments (all county public records) are fetched into gitignored files and stored only in
+  members-only tables; the names of buyers and sellers on transfers are not stored at all. No analytics or advertising trackers.
 - **Demo safety switch.** The site only sends email to addresses in `MAIL_ALLOWLIST`.
 
 ## Where the old content went
@@ -80,7 +81,7 @@ governing documents, rules, paper forms and realtor documents stay public.
 |---|---|
 | Add a document, event or announcement | Admin area, no code needed |
 | Add a financial year | Append to `YEARS` in `src/data/finance.ts`; `npm test` checks the totals |
-| Refresh map and owner data | `npm run gis:sync` then `npm run seed`, and redeploy |
+| Refresh map, owner, sales and assessment data | `npm run gis:sync` then `npm run seed -- --county-only` (monthly is plenty) |
 | Add a request form | Add a definition to `src/lib/forms/definitions.ts` |
 | Change who receives email | `MAIL_ALLOWLIST` / `ADMIN_NOTIFY_EMAIL` in `wrangler.jsonc` |
 

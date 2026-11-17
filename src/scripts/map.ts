@@ -10,6 +10,7 @@ maplibregl.setWorkerUrl(workerUrl);
 type LotProps = { id: string; kind: string; label: string; lot: string | null; section: string | null; address: string | null; acres: number | null; improved: boolean; center: string | [number, number] };
 type LotFeature = Feature<Geometry, LotProps>;
 
+const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 const el = document.getElementById('map');
 if (el) void init(el);
 
@@ -93,7 +94,9 @@ async function init(container: HTMLElement) {
     factsEl.hidden = false;
     if (p.acres) dlRow(factsEl, 'Acreage', `${p.acres} acres`);
     if (p.kind === 'lot') dlRow(factsEl, 'Status', p.improved ? 'Home on lot' : 'Undeveloped lot');
-    history.replaceState(null, '', `?lot=${encodeURIComponent(id)}`);
+    const url = new URL(location.href);
+    url.searchParams.set('lot', id); // keep any ?view= so a shared link reopens the same map
+    history.replaceState(null, '', url);
     privateEl.hidden = true;
     privateEl.replaceChildren();
     if (!member || p.kind !== 'lot') return;
@@ -112,6 +115,10 @@ async function init(container: HTMLElement) {
       if (d.full_baths || d.half_baths) dlRow(dl, 'Bathrooms', [d.full_baths ? `${d.full_baths} full` : '', d.half_baths ? `${d.half_baths} half` : ''].filter(Boolean).join(', '));
       if (d.building_style) dlRow(dl, 'Style', String(d.building_style));
       if (d.exterior) dlRow(dl, 'Exterior', String(d.exterior));
+      const sale = d.last_sale as { sale_date: string; price: number; bundle_size: number } | null;
+      if (sale) dlRow(dl, 'Last sale', `${money(sale.price)} (${sale.sale_date.slice(0, 4)})${sale.bundle_size > 1 ? ', with an adjoining lot' : ''}`);
+      const assessment = d.assessment as { assessed_on: string; total_value: number } | null;
+      if (assessment) dlRow(dl, 'County assessment', `${money(assessment.total_value)} (${assessment.assessed_on.slice(0, 4)})`);
       const note = document.createElement('p'); note.className = 'small muted mt-2 mb-0'; note.textContent = 'Owners only. From county records; please keep it within the community.';
       privateEl.append(dl, note);
       privateEl.hidden = dl.children.length === 0;
@@ -160,9 +167,56 @@ async function init(container: HTMLElement) {
   });
   document.addEventListener('click', (ev) => { if (!(ev.target as HTMLElement).closest('.map-search')) close(); });
 
+  if (member) setUpMarketViews(map, (style.layers.find((l) => l.id === 'parcel-fill') as { paint: Record<string, unknown> }).paint['fill-color']);
+
   map.on('load', () => {
     const initial = new URLSearchParams(location.search).get('lot');
     if (initial && byId.has(initial)) void select(initial, true);
     (map.getSource('parcels') as GeoJSONSource | undefined) && container.setAttribute('data-ready', '1');
   });
+}
+
+/**
+ * Owners-only map views. Per-lot metrics come from a members-only endpoint and are attached as
+ * feature state, so nothing private is ever written into the public parcel file.
+ */
+function setUpMarketViews(map: maplibregl.Map, lotsColor: unknown) {
+  const group = document.getElementById('map-view');
+  if (!group) return;
+  const ready = new Promise<void>((resolve) => (map.loaded() ? resolve() : map.once('load', () => resolve())));
+  const thisYear = new Date().getFullYear();
+  const common = ['match', ['get', 'kind'], 'recreation', '#f0b77a', '#c9dcc6'];
+  const state = (k: string) => ['coalesce', ['feature-state', k], -1];
+  const views: Record<string, unknown> = {
+    lots: lotsColor,
+    sales: ['case', ['!=', ['get', 'kind'], 'lot'], common,
+      ['<', state('lastSale'), 0], '#eceeed',
+      ['step', state('lastSale'), '#d6e4f3', 2010, '#9fc0e8', 2018, '#5b93d9', 2022, '#1f5fb8']],
+    idle: ['case', ['!=', ['get', 'kind'], 'lot'], common,
+      ['!=', ['feature-state', 'vacant'], true], '#eceeed',
+      ['<', state('heldSince'), 0], '#9c3f12',
+      ['step', state('heldSince'), '#9c3f12', thisYear - 29, '#d9692f', thisYear - 19, '#f0a274', thisYear - 9, '#f8d3b8']],
+  };
+  let loaded: Promise<void> | null = null;
+  const load = () => (loaded ??= fetch('/members/api/market.json', { headers: { accept: 'application/json' } })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d: { lots: Record<string, { lastSale: number | null; heldSince: number | null; vacant: boolean }> }) => {
+      for (const [id, m] of Object.entries(d.lots)) {
+        map.setFeatureState({ source: 'parcels', id }, { lastSale: m.lastSale ?? -1, heldSince: m.heldSince ?? -1, vacant: m.vacant });
+      }
+    }));
+  const show = async (view: string) => {
+    if (!(view in views)) return;
+    await ready;
+    if (view !== 'lots') { try { await load(); } catch { return; } }
+    map.setPaintProperty('parcel-fill', 'fill-color', views[view] as never);
+    group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    document.querySelectorAll<HTMLElement>('[data-legend]').forEach((el) => { el.hidden = el.dataset.legend !== view; });
+    const url = new URL(location.href);
+    if (view === 'lots') url.searchParams.delete('view'); else url.searchParams.set('view', view);
+    history.replaceState(null, '', url);
+  };
+  group.addEventListener('click', (ev) => { const b = (ev.target as HTMLElement).closest('button'); if (b?.dataset.view) void show(b.dataset.view); });
+  const initial = new URLSearchParams(location.search).get('view');
+  if (initial && initial !== 'lots') void show(initial);
 }

@@ -53,6 +53,9 @@ select pg_temp.expect((select count(*) from public.ballot_receipts) = 0, 'neighb
 -- Signed in but not approved
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a3');
 select pg_temp.expect((select count(*) from public.lot_facts) = 0, 'pending account cannot read owner data');
+select pg_temp.expect((select count(*) from public.lot_sales) = 0, 'pending account cannot read sale history');
+select pg_temp.expect((select count(*) from public.lot_assessments) = 0, 'pending account cannot read assessments');
+select pg_temp.expect_error($$insert into public.lot_sales (lot_id, sale_date, kind, deal_key) values ('t-1', '2020-01-01', 'market', 'x')$$, 'pending account cannot add sales');
 select pg_temp.expect((select count(*) from public.documents where visibility <> 'public') = 0, 'pending account cannot list member documents');
 select pg_temp.expect_error($$select public.cast_ballot('00000000-0000-0000-0000-0000000000b1', '{}')$$, 'pending account cannot vote');
 select pg_temp.expect((select count(*) from public.member_directory()) = 0, 'pending account gets an empty directory');
@@ -72,6 +75,7 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000a3');
 select pg_temp.expect((select count(*) from public.dues) = 0, 'pending account cannot read dues');
 select pg_temp.expect((select count(*) from public.dues_periods) = 0, 'pending account cannot read dues years');
 reset role;
+select set_config('request.jwt.claims', '', true); -- act as the database owner, not the last test user
 update public.profiles set role = 'board' where id = '00000000-0000-0000-0000-0000000000a2';
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
 select pg_temp.expect((select count(*) from public.dues where year = 2099) = 2, 'board member sees every lot''s dues');

@@ -27,6 +27,7 @@ export const publicNav = [
 export const memberNav = [
   { href: '/members', label: 'Overview', icon: 'grid' },
   { href: '/members/financials', label: 'Financials', icon: 'chart' },
+  { href: '/members/real-estate', label: 'Real estate', icon: 'trend' },
   { href: '/members/minutes', label: 'Minutes & agendas', icon: 'file' },
   { href: '/members/newsletters', label: 'Newsletters', icon: 'news' },
   { href: '/members/board', label: 'Board & committees', icon: 'users' },

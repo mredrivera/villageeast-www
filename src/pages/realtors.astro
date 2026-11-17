@@ -30,6 +30,11 @@ const { data } = await Astro.locals.supabase.from('documents').select('id,title,
         <a class="btn btn-primary btn-sm" href="/contact?topic=realtor">Contact the board</a>
         <a class="btn btn-ghost btn-sm" href="/map">View the lot map</a>
       </div>
+      <div class="panel">
+        <h3>Owners: market trends</h3>
+        <p class="small mb-2">Signed-in owners can see every recorded sale, waterfront and off-water prices, build-out and vacant-lot data from county records.</p>
+        <a class="btn btn-ghost btn-sm" href="/members/real-estate">Real estate trends</a>
+      </div>
     </div>
   </div></section>
 </Base>
